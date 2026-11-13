@@ -1,0 +1,12 @@
+{
+  "name": "herdr-folders",
+  "version": "0.1.0",
+  "description": "herdr plugin: terminals and agents grouped by folder, with git status, bulk close and a git changes panel",
+  "author": "barnuri",
+  "license": "MIT",
+  "type": "commonjs",
+  "bin": { "herdr-folders": "bin/folders.js" },
+  "engines": { "node": ">=22.0.0" },
+  "scripts": { "test": "node --test \"tests/*.test.js\"" },
+  "keywords": ["herdr", "herdr-plugin", "terminal", "git"]
+}

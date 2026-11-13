@@ -1,0 +1,108 @@
+id = "barnuri.folders"
+name = "Folders"
+version = "0.1.0"
+min_herdr_version = "0.9.0"
+description = "Folder sidebar: terminals and agents grouped by folder, git status per folder, bulk close, and a git changes panel"
+platforms = ["linux", "macos"]
+
+[[panes]]
+id = "sidebar"
+title = "Folders"
+command = ["node", "bin/sidebar.js"]
+placement = "split"
+
+[[panes]]
+id = "git"
+title = "Git changes"
+command = ["node", "bin/git-panel.js"]
+placement = "popup"
+
+[[panes]]
+id = "confirm"
+title = "Close panes"
+command = ["node", "bin/confirm.js"]
+placement = "popup"
+
+[[actions]]
+id = "toggle-panel"
+title = "Folders: toggle panel"
+contexts = ["workspace", "pane"]
+command = ["node", "bin/folders.js", "panel", "toggle"]
+
+[[actions]]
+id = "hide-panel"
+title = "Folders: hide panel to a strip"
+contexts = ["workspace", "pane"]
+command = ["node", "bin/folders.js", "panel", "hide"]
+
+[[actions]]
+id = "show-panel"
+title = "Folders: show hidden panel"
+contexts = ["workspace", "pane"]
+command = ["node", "bin/folders.js", "panel", "show"]
+
+[[actions]]
+id = "grow-panel"
+title = "Folders: widen panel"
+contexts = ["workspace", "pane"]
+command = ["node", "bin/folders.js", "panel", "grow"]
+
+[[actions]]
+id = "shrink-panel"
+title = "Folders: narrow panel"
+contexts = ["workspace", "pane"]
+command = ["node", "bin/folders.js", "panel", "shrink"]
+
+[[actions]]
+id = "expand-all"
+title = "Folders: expand all folders"
+contexts = ["workspace", "pane"]
+command = ["node", "bin/folders.js", "expand-all"]
+
+[[actions]]
+id = "collapse-all"
+title = "Folders: collapse all folders"
+contexts = ["workspace", "pane"]
+command = ["node", "bin/folders.js", "collapse-all"]
+
+[[actions]]
+id = "expand-agents"
+title = "Folders: expand all agents"
+contexts = ["workspace", "pane"]
+command = ["node", "bin/folders.js", "expand-agents"]
+
+[[actions]]
+id = "collapse-agents"
+title = "Folders: collapse all agents"
+contexts = ["workspace", "pane"]
+command = ["node", "bin/folders.js", "collapse-agents"]
+
+[[actions]]
+id = "git-changes"
+title = "Folders: git changes for current folder"
+contexts = ["pane"]
+command = ["node", "bin/folders.js", "git"]
+
+[[actions]]
+id = "close-empty-folders"
+title = "Folders: close empty folders"
+contexts = ["workspace", "pane"]
+command = ["node", "bin/folders.js", "confirm-close", "empty-folders"]
+
+[[actions]]
+id = "close-idle"
+title = "Folders: close idle agents and empty folders"
+contexts = ["workspace", "pane"]
+command = ["node", "bin/folders.js", "confirm-close", "idle-agents-and-empty-folders"]
+
+[[actions]]
+id = "close-terminals"
+title = "Folders: close all terminals (keep agents)"
+contexts = ["workspace", "pane"]
+command = ["node", "bin/folders.js", "confirm-close", "terminals"]
+
+[[actions]]
+id = "close-all"
+title = "Folders: close everything"
+contexts = ["workspace", "pane"]
+command = ["node", "bin/folders.js", "confirm-close", "all"]

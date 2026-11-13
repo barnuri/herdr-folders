@@ -1,0 +1,121 @@
+'use strict';
+
+const test = require('node:test');
+const assert = require('node:assert/strict');
+
+const { buildFolders, planClose, isShellBusy, displayTitle } = require('../lib/model');
+const { parseStatus, isClean, stagedFiles, unstagedFiles } = require('../lib/git');
+const { promptText } = require('../lib/prompt');
+const { parseInput, Line, width, stripAnsi } = require('../lib/tui');
+const { parseDiff } = require('../bin/git-panel');
+
+const pane = (id, cwd, extra = {}) => ({ pane_id: id, tab_id: 't1', workspace_id: 'w1', cwd, foreground_cwd: cwd, ...extra });
+const idleShell = { shell_pid: 10, foreground_process_group_id: 10 };
+const busyShell = { shell_pid: 10, foreground_process_group_id: 20, foreground_processes: [{ pid: 20, cmdline: 'npm run dev' }] };
+
+function fixture() {
+  return buildFolders({
+    panes: [pane('p1', '/r/a'), pane('p2', '/r/a/src'), pane('p3', '/r/b'), pane('p4', '/r/c'), pane('p5', '/r/c'), pane('p6', '/r/d')],
+    agents: [
+      { pane_id: 'p1', agent: 'claude', agent_status: 'working' },
+      { pane_id: 'p4', agent: 'opencode', agent_status: 'idle' },
+    ],
+    processInfo: { p2: busyShell, p3: idleShell, p5: idleShell, p6: idleShell },
+    roots: { '/r/a': '/r/a', '/r/a/src': '/r/a', '/r/c': '/r/c' },
+  });
+}
+
+test('groups panes by repo root and shows an agent pane only once', () => {
+  const folders = fixture();
+  const a = folders.find((folder) => folder.path === '/r/a');
+  assert.equal(a.panes.length, 2);
+  assert.deepEqual(a.panes.map((p) => p.kind), ['agent', 'terminal']);
+  assert.equal(a.status, 'working');
+  assert.equal(a.panes[1].command, 'npm run dev');
+  assert.equal(folders.flatMap((folder) => folder.panes).filter((p) => p.paneId === 'p1').length, 1);
+});
+
+test('folders with a working agent sort first', () => {
+  assert.equal(fixture()[0].path, '/r/a');
+});
+
+test('excluded panes are dropped', () => {
+  const folders = buildFolders({ panes: [pane('p1', '/x'), pane('me', '/x')], agents: [], excludePaneIds: new Set(['me']) });
+  assert.deepEqual(folders[0].panes.map((p) => p.paneId), ['p1']);
+});
+
+test('planClose modes select the right panes', () => {
+  const folders = fixture();
+  const ids = (mode, opts) => planClose(folders, mode, opts).map((p) => p.paneId).sort();
+  assert.deepEqual(ids('empty-folders'), ['p3', 'p6']);
+  assert.deepEqual(ids('idle-agents-and-empty-folders'), ['p3', 'p4', 'p5', 'p6']);
+  assert.deepEqual(ids('terminals'), ['p2', 'p3', 'p5', 'p6']);
+  assert.deepEqual(ids('all'), ['p1', 'p2', 'p3', 'p4', 'p5', 'p6']);
+  assert.deepEqual(ids('all', { keepPaneIds: new Set(['p1']) }), ['p2', 'p3', 'p4', 'p5', 'p6']);
+  assert.throws(() => planClose(folders, 'nope'), /unknown close mode/);
+});
+
+test('isShellBusy and displayTitle', () => {
+  assert.equal(isShellBusy(idleShell), false);
+  assert.equal(isShellBusy(busyShell), true);
+  assert.equal(isShellBusy(null), false);
+  assert.equal(displayTitle({ title: 'OC | Fix login' }), 'Fix login');
+  assert.equal(displayTitle({ title: 'Current Folder: ~/x' }), '');
+});
+
+const PORCELAIN = [
+  '# branch.oid abc',
+  '# branch.head main',
+  '# branch.upstream origin/main',
+  '# branch.ab +2 -1',
+  '1 A. N... 100644 100644 100644 a b new.js',
+  '1 .M N... 100644 100644 100644 a b src/mod file.js',
+  '1 D. N... 100644 000000 000000 a b gone.js',
+  '2 R. N... 100644 100644 100644 a b R100 renamed.js\told.js',
+  'u UU N... 100644 100644 100644 100644 a b c clash.js',
+  '? untracked.txt',
+].join('\n');
+
+test('parseStatus counts like the minimal-git prompt', () => {
+  const { summary, files } = parseStatus(PORCELAIN);
+  assert.deepEqual(
+    { branch: summary.branch, ahead: summary.ahead, behind: summary.behind, added: summary.added, untracked: summary.untracked, modified: summary.modified, deleted: summary.deleted, conflicts: summary.conflicts },
+    { branch: 'main', ahead: 2, behind: 1, added: 1, untracked: 1, modified: 2, deleted: 1, conflicts: 1 }
+  );
+  assert.equal(files.find((f) => f.origPath === 'old.js').path, 'renamed.js');
+  assert.equal(files.find((f) => f.worktree === 'M').path, 'src/mod file.js');
+  assert.equal(promptText(summary), 'main ↓1 ↑2 +1 ?1 ±2 -1 !1');
+  assert.deepEqual(stagedFiles(files).map((f) => f.path).sort(), ['gone.js', 'new.js', 'renamed.js']);
+  assert.deepEqual(unstagedFiles(files).map((f) => f.path).sort(), ['clash.js', 'src/mod file.js', 'untracked.txt']);
+});
+
+test('clean repo renders "="', () => {
+  const { summary } = parseStatus('# branch.head master\n# branch.ab +0 -0\n');
+  assert.equal(isClean(summary), true);
+  assert.equal(promptText(summary), 'master =');
+});
+
+test('parseInput splits keys and SGR mouse events', () => {
+  const events = parseInput('j\x1b[<0;5;3M\x1b[<32;6;3M\x1b[<2;1;1m\x1b[A\x1b[<64;1;1M');
+  assert.equal(events[0].key, 'j');
+  assert.deepEqual({ x: events[1].x, y: events[1].y, press: events[1].press, button: events[1].button }, { x: 4, y: 2, press: true, button: 0 });
+  assert.equal(events[2].motion, true);
+  assert.deepEqual({ button: events[3].button, press: events[3].press }, { button: 2, press: false });
+  assert.equal(events[4].key, '\x1b[A');
+  assert.equal(events[5].wheel, true);
+});
+
+test('Line tracks hit regions and clips to the given width', () => {
+  const line = new Line();
+  const run = () => {};
+  line.add('ab').add('cdef', '\x1b[1m', { run });
+  assert.deepEqual(line.hits[0], { x0: 2, x1: 6, action: { run } });
+  assert.equal(width(stripAnsi(line.render(4))), 4);
+  assert.equal(width(stripAnsi(line.render(10))), 10);
+});
+
+test('parseDiff numbers lines and hides file headers', () => {
+  const rows = parseDiff('diff --git a/x b/x\nindex 1..2\n--- a/x\n+++ b/x\n@@ -3,2 +3,3 @@ fn\n ctx\n-old\n+new\n+more\n');
+  assert.deepEqual(rows.map((r) => r.type), ['hunk', 'ctx', 'del', 'add', 'add']);
+  assert.deepEqual([rows[1].oldNo, rows[1].newNo, rows[2].oldNo, rows[3].newNo, rows[4].newNo], [3, 3, 4, 4, 5]);
+});
