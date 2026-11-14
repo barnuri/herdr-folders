@@ -129,3 +129,13 @@ test('project filter ranks contiguous and early matches first', () => {
   assert.equal(fuzzyScore('abc', 'x'), null);
   assert.equal(filterProjects(projects, '').length, 3);
 });
+
+test('buildTree nests folders by path and merges single-child directories', () => {
+  const { buildTree, dirKeys } = require('../lib/model');
+  const f = (p) => ({ path: p, name: p.split('/').pop() });
+  const tree = buildTree([f('/u/s/private'), f('/u/s/private/web'), f('/u/s/private/a/b/api'), f('/u/s/CP/keystone')]);
+  const show = (n) => `${n.type}:${n.name}${n.children.length ? `(${n.children.map(show).join(',')})` : ''}`;
+  assert.equal(tree.map(show).join(','), 'dir:s(dir:CP(folder:keystone),folder:private(dir:a/b(folder:api),folder:web))');
+  assert.deepEqual(dirKeys(tree).sort(), ['dir:/u/s', 'dir:/u/s/CP', 'dir:/u/s/private/a/b']);
+  assert.equal(buildTree([f('/x/one'), f('/x/two')]).map(show).join(','), 'dir:x(folder:one,folder:two)');
+});

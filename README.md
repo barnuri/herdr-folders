@@ -17,6 +17,15 @@ on a free local model. Re-record it with the [`herdr-folders-demo` skill](skills
   press `enter` to open a project as a workspace (or focus it when it is already open), and
   right-click or press `ctrl+t` to open it as a tab. Open projects show their status dot.
   Turn the tab off with `projects-tab off`.
+- **Focused pane marked:** the pane you are in gets an accent bar and bold text, and its folder name
+  turns blue, like the selected row in herdr's sidebar.
+- **Two groupings:** flat, one group per folder (default), or a tree that nests folders by path,
+  with single-child directories merged (`sandbox/private`). Toggle with the toolbar button, `v`, or
+  `grouping tree|folder`.
+- **Easy targets:** every row is clickable across its full width, the row under the pointer is
+  highlighted, and a blank row separates folder groups (`s` or `spacing compact` removes it).
+- **All actions in one place:** the gear button (or `?`) opens a list of every panel action with its
+  key: view, panel, git and bulk close.
 - **Folder tree:** one node per folder, with a type icon (rust, go, python, bun, typescript, node, java, helm, docker, agent, git, plain). Under it are its agents and terminals. A pane that runs an agent is shown once, as an agent.
 - **herdr statuses:** agents show working (spinner), blocked, done, idle and unknown. Terminals show `›` at the shell prompt, or `▶ <command>` while something runs. Folders show the most urgent status. Folders with active agents sort first.
 - **Git line per folder:** `branch ↓behind ↑ahead +added ?untracked ±modified -deleted !conflicts`, or `=` when clean.
@@ -50,6 +59,9 @@ to expand.
 | `[` / `]` | narrow / widen |
 | `h` | hide to a strip / show |
 | `tab` | switch between the Folders and Projects tabs |
+| `?` / gear | all actions |
+| `v` | flat or tree grouping |
+| `s` | comfortable or compact spacing |
 | `R` | restore herdr's sidebar (in replace mode) |
 
 ## Git panel keys
@@ -66,6 +78,8 @@ node bin/folders.js replace on|off                   # replace herdr's sidebar, 
 node bin/folders.js projects web --rescan            # project-manager projects, filtered
 node bin/folders.js open-project web-shop [--tab]
 node bin/folders.js view projects|folders
+node bin/folders.js grouping tree|folder
+node bin/folders.js spacing compact|comfortable
 node bin/folders.js collapse-all | expand-all | expand-agents | collapse-agents
 node bin/folders.js close terminals                  # dry run: lists what would close
 node bin/folders.js close idle-agents-and-empty-folders --yes

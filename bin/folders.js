@@ -6,7 +6,7 @@ const path = require('node:path');
 const herdrApi = require('../lib/herdr');
 const gitApi = require('../lib/git');
 const { collect } = require('../lib/snapshot');
-const { planClose, CLOSE_MODES } = require('../lib/model');
+const { planClose, CLOSE_MODES, buildTree, dirKeys } = require('../lib/model');
 const { updateState, loadState, queuePanelCommand } = require('../lib/state');
 const { promptText } = require('../lib/prompt');
 const projectsApi = require('../lib/projects');
@@ -31,6 +31,8 @@ const USAGE = `herdr-folders — control the folders panel (all output is JSON)
   open-project <filter> [--tab] open the best match as a workspace (or a tab)
   projects-tab on|off           show or hide the Projects tab in the panel
   view folders|projects         switch the panel's tab
+  grouping folder|tree          one flat group per folder (default), or folders nested by path
+  spacing comfortable|compact   a blank row between folder groups (default), or none
   git <folder>                  open the git changes panel for a folder
   confirm-close <mode>          open a popup that asks before closing
   git-status <folder>           git summary and changed files
@@ -78,7 +80,9 @@ async function setAllCollapsed(collapsed) {
   const { folders } = await collect({ withGit: false });
   updateState((state) => {
     state.collapsed = {};
-    if (collapsed) for (const folder of folders) state.collapsed[folder.path] = true;
+    if (!collapsed) return;
+    for (const folder of folders) state.collapsed[folder.path] = true;
+    if (state.grouping === 'tree') for (const key of dirKeys(buildTree(folders))) state.collapsed[key] = true;
   });
   return { collapsed, folders: folders.length };
 }
@@ -190,6 +194,18 @@ async function main(argv) {
       if (!match) throw new Error(`no project matches "${rest[0]}" (run: projects --rescan)`);
       return { opened: match, result: await projectsApi.openProject(match, flags.has('--tab') ? 'tab' : 'workspace') };
     }
+    case 'grouping':
+      if (!['folder', 'tree'].includes(rest[0])) throw new Error('grouping needs folder or tree');
+      updateState((state) => {
+        state.grouping = rest[0];
+      });
+      return { grouping: rest[0] };
+    case 'spacing':
+      if (!['compact', 'comfortable'].includes(rest[0])) throw new Error('spacing needs compact or comfortable');
+      updateState((state) => {
+        state.spacing = rest[0];
+      });
+      return { spacing: rest[0] };
     case 'projects-tab':
     case 'view':
       updateState((state) => {

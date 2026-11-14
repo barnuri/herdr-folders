@@ -6,7 +6,7 @@ const os = require('node:os');
 
 const herdrApi = require('../lib/herdr');
 const { collect } = require('../lib/snapshot');
-const { planClose, displayTitle } = require('../lib/model');
+const { planClose, displayTitle, buildTree, dirKeys } = require('../lib/model');
 const { loadState, updateState, statePath } = require('../lib/state');
 const { folderType, OPEN_FOLDER_ICON, AGENT_ICON, TERMINAL_ICON, BRANCH_ICON } = require('../lib/icons');
 const { promptSegments } = require('../lib/prompt');
@@ -208,6 +208,9 @@ class Sidebar {
       }
       const { folders } = await collect({ excludePaneIds: this.paneId ? [this.paneId] : [] });
       this.folders = folders;
+      // Remember the user's pane: while the panel itself has focus, no listed pane is focused.
+      const focused = folders.flatMap((folder) => folder.panes).find((pane) => pane.focused);
+      if (focused) this.focusedPaneId = focused.paneId;
       this.loading = false;
       this.lastRefresh = Date.now();
       this.render();
@@ -299,9 +302,25 @@ class Sidebar {
   setAllCollapsed(collapsed) {
     this.save((state) => {
       state.collapsed = {};
-      if (collapsed) for (const folder of this.folders) state.collapsed[folder.path] = true;
+      if (!collapsed) return;
+      for (const folder of this.folders) state.collapsed[folder.path] = true;
+      if (state.grouping === 'tree') for (const key of dirKeys(buildTree(this.folders))) state.collapsed[key] = true;
     });
     this.render();
+  }
+
+  toggleSpacing() {
+    this.save((state) => {
+      state.spacing = state.spacing === 'compact' ? 'comfortable' : 'compact';
+    });
+    this.render();
+  }
+
+  toggleGrouping() {
+    this.save((state) => {
+      state.grouping = state.grouping === 'tree' ? 'folder' : 'tree';
+    });
+    this.flash(this.state.grouping === 'tree' ? 'tree: folders nested by path' : 'flat: one group per folder', THEME.accent);
   }
 
   agentExpanded(paneId) {
@@ -332,6 +351,7 @@ class Sidebar {
 
   async focus(pane) {
     await herdrApi.focusPane(pane);
+    this.focusedPaneId = pane.paneId;
     this.flash(`focused ${pane.kind === 'agent' ? pane.agent : 'terminal'} ${pane.paneId}`);
   }
 
@@ -341,6 +361,88 @@ class Sidebar {
       return;
     }
     await herdrApi.openPluginPane('git', { placement: 'popup', width: '90%', height: '85%', env: { HERDR_FOLDERS_REPO: folder.path } });
+  }
+
+  openActions() {
+    const item = this.selectable[this.selected];
+    this.menuFolder = item?.folder || this.folders.find((folder) => folder.panes.some((pane) => pane.paneId === this.focusedPaneId)) || null;
+    this.menu = this.menu === 'actions' ? null : 'actions';
+    this.selected = 0;
+    this.scroll = 0;
+    this.render();
+  }
+
+  // Every panel action in one list: the same things the toolbar, keys and CLI do.
+  actionList() {
+    const close = () => {
+      this.menu = null;
+    };
+    const then = (fn) => () => {
+      close();
+      const result = fn();
+      this.render();
+      return result;
+    };
+    const tree = this.state.grouping === 'tree';
+    const folder = this.menuFolder;
+    const sections = [
+      ['View', [
+        ['\uf103', 'Expand all folders', 'e', then(() => this.setAllCollapsed(false))],
+        ['\uf102', 'Collapse all folders', 'c', then(() => this.setAllCollapsed(true))],
+        [AGENT_ICON, this.state.allAgentsExpanded ? 'Collapse agent details' : 'Expand agent details', 'a', then(() => this.toggleAllAgents())],
+        ['\uf0e8', tree ? 'Group flat, one per folder' : 'Group as a tree by path', 'v', then(() => this.toggleGrouping())],
+        ...(this.pm ? [['\uf503', this.view === 'projects' ? 'Show Folders tab' : 'Show Projects tab', 'tab', then(() => this.setView(this.view === 'projects' ? 'folders' : 'projects'))]] : []),
+        ['\uf07e', this.state.spacing === 'compact' ? 'Spacing: comfortable' : 'Spacing: compact', 's', then(() => this.toggleSpacing())],
+        ['\uf021', 'Refresh now', 'r', then(() => this.refresh())],
+      ]],
+      ['Panel', [
+        ['\uf067', 'Widen panel', ']', then(() => this.resizeBy(RESIZE_STEP_COLS))],
+        ['\uf068', 'Narrow panel', '[', then(() => this.resizeBy(-RESIZE_STEP_COLS))],
+        ['\uf101', 'Hide panel to a strip', 'h', then(() => this.toggleHidden())],
+        this.state.replace
+          ? ['\uf0e2', "Restore herdr's sidebar", 'R', then(() => this.restoreHerdrSidebar())]
+          : ['\uf0c9', "Replace herdr's sidebar", '', then(() => require('../lib/panel').replaceOn())],
+      ]],
+      ['Git', [
+        ['\ue702', folder ? `Git changes: ${folder.name}` : 'Git changes (select a folder)', 'g', then(() => (folder ? this.openGit(folder) : this.flash('select a folder first', THEME.yellow)))],
+      ]],
+      ['Close', CLOSE_MENU.map((entry, i) => ['\uf1f8', `${entry.label} (${planClose(this.folders, entry.mode).length})`, `x ${i + 1}`, () => this.askClose(entry.mode)])],
+    ];
+    if (this.pm) sections[0][1].push(['\uf002', 'Rescan projects', '^R', then(() => this.discover())]);
+    return sections;
+  }
+
+  actionLines() {
+    const lines = [];
+    this.selectable = [];
+    const cols = this.cols;
+    const header = new Line();
+    header.add(' \uf013 Actions', s(THEME.text, ANSI.bold));
+    header.pad(cols - 4);
+    header.add(' \uf00d ', s(THEME.muted), { run: () => this.openActions() });
+    lines.push(header);
+    for (const [title, actions] of this.actionList()) {
+      const section = new Line();
+      section.add(` ${title.toUpperCase()}`, s(THEME.faint, ANSI.bold));
+      lines.push(section);
+      for (const [icon, label, key, run] of actions) {
+        const line = new Line();
+        const color = title === 'Close' && label.startsWith('Close everything') ? THEME.red : THEME.text;
+        line.add('   ');
+        line.add(icon, s(THEME.accent), { run });
+        line.add(' ');
+        line.add(truncate(label, cols - line.cols - width(key) - 3), s(color), { run });
+        if (key) {
+          line.pad(cols - width(key) - 2);
+          line.add(key, s(THEME.faint), { run });
+        }
+        line.selectIndex = this.selectable.length;
+        line.rowAction = { run, select: this.selectable.length };
+        this.selectable.push({ run, line: lines.length });
+        lines.push(line);
+      }
+    }
+    return lines;
   }
 
   openCloseMenu() {
@@ -397,6 +499,14 @@ class Sidebar {
         this.render();
         return;
       }
+    }
+    if (event.motion && event.button === 3) {
+      // Hover: no button held. Highlight the row under the pointer so targets are easy to see.
+      if (this.hoverY !== event.y) {
+        this.hoverY = event.y;
+        this.render();
+      }
+      return;
     }
     if (!event.press || event.motion) return;
     if (event.x === this.gripColumn() && event.button === 0 && !this.state.hidden) {
@@ -468,6 +578,16 @@ class Sidebar {
         break;
       case 'a':
         this.toggleAllAgents();
+        break;
+      case 'v':
+        this.toggleGrouping();
+        break;
+      case 's':
+        this.toggleSpacing();
+        break;
+      case '?':
+      case 'm':
+        this.openActions();
         break;
       case 'x':
         this.openCloseMenu();
@@ -550,10 +670,12 @@ class Sidebar {
       ['\uf102', () => this.setAllCollapsed(true), THEME.muted],
       ['\uf103', () => this.setAllCollapsed(false), THEME.muted],
       [AGENT_ICON, () => this.toggleAllAgents(), this.state.allAgentsExpanded ? THEME.accent : THEME.muted],
+      ['\uf0e8', () => this.toggleGrouping(), this.state.grouping === 'tree' ? THEME.accent : THEME.muted],
       ['\uf068', () => this.resizeBy(-RESIZE_STEP_COLS), THEME.muted],
       ['\uf067', () => this.resizeBy(RESIZE_STEP_COLS), THEME.muted],
       ['\uf101', () => this.toggleHidden(), THEME.muted],
-      ['\uf1f8', () => this.openCloseMenu(), this.menu ? THEME.red : THEME.muted],
+      ['\uf1f8', () => this.openCloseMenu(), this.menu === 'close' ? THEME.red : THEME.muted],
+      ['\uf013', () => this.openActions(), this.menu === 'actions' ? THEME.accent : THEME.muted],
     ];
     if (this.state.replace) tools.push(['\uf0e2', () => this.restoreHerdrSidebar(), THEME.yellow]);
     const toolsWidth = tools.length * 2;
@@ -592,6 +714,8 @@ class Sidebar {
   }
 
   bodyLines() {
+    if (this.menu === 'actions') return this.actionLines();
+    if (this.menu) return this.menuLines();
     if (this.view === 'projects') return this.projectLines();
     const lines = [];
     this.selectable = [];
@@ -599,111 +723,27 @@ class Sidebar {
     const addSelectable = (line, item) => {
       item.line = lines.length;
       line.selectIndex = this.selectable.length;
+      line.rowAction = { ...item, select: this.selectable.length };
       this.selectable.push(item);
       lines.push(line);
     };
 
     if (this.menu) return this.menuLines();
 
-    for (const folder of this.folders) {
-      const collapsed = Boolean(this.state.collapsed[folder.path]);
-      const type = folderType(folder.path, folder.isRepo);
-      const toggle = () => this.toggleFolder(folder.path);
-      const context = () => this.openGit(folder);
-      const run = toggle;
-
-      const head = new Line();
-      head.add(' ');
-      head.add(collapsed ? '\uf105' : '\uf107', s(THEME.faint), { run: toggle, context });
-      head.add(' ');
-      head.add(collapsed ? type.icon : type.icon === '\uf07b' ? OPEN_FOLDER_ICON : type.icon, s(type.color), { run, context });
-      head.add(' ');
-      const badge = [];
-      if (folder.status) badge.push([`${statusGlyph(folder.status, this.frame)}`, STATUS_STYLE[folder.status].color]);
-      if (folder.agentCount) badge.push([`${AGENT_ICON}${folder.agentCount}`, THEME.muted]);
-      if (folder.terminalCount) badge.push([`${TERMINAL_ICON} ${folder.terminalCount}`, THEME.faint]);
-      const badgeText = badge.map(([text]) => text).join(' ');
-      const nameMax = cols - head.cols - width(badgeText) - 2;
-      head.add(truncate(folder.name, nameMax), s(THEME.text, ANSI.bold), { run, context });
-      head.pad(cols - width(badgeText) - 1);
-      badge.forEach(([text, color], i) => {
-        if (i) head.add(' ');
-        head.add(text, s(color));
-      });
-      addSelectable(head, { run, toggle, folder, context });
-
-      if (folder.isRepo && folder.git) {
-        const gitLine = new Line();
-        gitLine.add('    ');
-        gitLine.add(`${BRANCH_ICON} `, s(THEME.faint), { run: context });
-        let first = true;
-        for (const segment of promptSegments(folder.git)) {
-          if (!first) gitLine.add(' ');
-          first = false;
-          const room = cols - gitLine.cols - 1;
-          if (room <= 1) break;
-          gitLine.add(truncate(segment.text, room), s(segment.color), { run: context });
-        }
-        lines.push(gitLine);
-      } else if (!folder.isRepo) {
-        const pathLine = new Line();
-        pathLine.add('    ');
-        pathLine.add(truncateLeft(folder.path.replace(os.homedir(), '~'), cols - 5), s(THEME.faint));
-        lines.push(pathLine);
-      }
-
-      if (collapsed) continue;
-      folder.panes.forEach((pane, index) => {
-        const last = index === folder.panes.length - 1;
-        const branch = last ? '\u2570' : '\u251c';
-        const row = new Line();
-        row.add(`  ${branch}\u2500`, s(THEME.border));
-        const focusRun = () => this.focus(pane);
-        if (pane.kind === 'agent') {
-          const expanded = this.agentExpanded(pane.paneId);
-          const style = STATUS_STYLE[pane.status] || STATUS_STYLE.unknown;
-          row.add(statusGlyph(pane.status, this.frame), s(style.color), { run: focusRun, context });
-          row.add(' ');
-          row.add(AGENT_ICON, s(THEME.accent), { run: focusRun, context });
-          row.add(' ');
-          const label = pane.name ? `${pane.name} · ${pane.agent}` : pane.agent;
-          const right = style.label;
-          const room = cols - row.cols - width(right) - 4;
-          row.add(truncate(label, room), s(THEME.text), { run: focusRun, context });
-          const title = displayTitle(pane);
-          if (title && room - width(label) > 4) row.add(` ${truncate(title, room - width(label) - 1)}`, s(THEME.faint), { run: focusRun, context });
-          row.pad(cols - width(right) - 3);
-          row.add(right, s(style.color));
-          row.add(' ');
-          row.add(expanded ? '\uf106' : '\uf107', s(THEME.faint), { run: () => this.toggleAgent(pane.paneId) });
-          addSelectable(row, { run: focusRun, toggle: () => this.toggleAgent(pane.paneId), folder, pane, context });
-          if (expanded) {
-            const rail = last ? '   ' : '  \u2502';
-            const details = [
-              [displayTitle(pane), THEME.muted],
-              [`${pane.tabLabel || pane.tabId} · ${pane.paneId}`, THEME.faint],
-            ];
-            if (pane.cwd !== folder.path) details.push([pane.cwd.replace(folder.path, '.'), THEME.faint]);
-            for (const [text, color] of details) {
-              if (!text) continue;
-              const detail = new Line();
-              detail.add(`${rail}   `, s(THEME.border));
-              detail.add(truncate(text, cols - detail.cols - 1), s(color), { run: focusRun });
-              lines.push(detail);
-            }
-          }
+    if (this.state.grouping === 'tree') {
+      const walk = (node, depth) => {
+        if (node.type === 'folder') {
+          this.folderLines(node.folder, depth, lines, addSelectable);
+          if (this.state.collapsed[node.folder.path]) return;
         } else {
-          const style = STATUS_STYLE[pane.status];
-          row.add(style.glyph, s(style.color), { run: focusRun, context });
-          row.add(' ');
-          row.add(TERMINAL_ICON, s(THEME.muted), { run: focusRun, context });
-          row.add(' ');
-          const subdir = pane.cwd !== folder.path ? ` ${pane.cwd.replace(`${folder.path}/`, '')}` : '';
-          const label = `${pane.command || 'shell'}${subdir}`;
-          row.add(truncate(label, cols - row.cols - 1), s(pane.busy ? THEME.text : THEME.muted), { run: focusRun, context });
-          addSelectable(row, { run: focusRun, folder, pane, context });
+          this.dirLine(node, depth, lines, addSelectable);
+          if (this.state.collapsed[`dir:${node.path}`]) return;
         }
-      });
+        for (const child of node.children) walk(child, depth + 1);
+      };
+      for (const node of buildTree(this.folders)) walk(node, 0);
+    } else {
+      for (const folder of this.folders) this.folderLines(folder, 0, lines, addSelectable);
     }
     if (!this.loading && !this.folders.length) {
       const empty = new Line();
@@ -711,6 +751,148 @@ class Sidebar {
       lines.push(empty);
     }
     return lines;
+  }
+
+  gap(lines) {
+    // no gap right under a directory row: its first child belongs to it
+    if (this.state.spacing !== 'compact' && lines.length && !lines[lines.length - 1].isDir) lines.push(new Line());
+  }
+
+  folderLines(folder, depth, lines, addSelectable) {
+    const cols = this.cols;
+    this.gap(lines);
+    const pad = '  '.repeat(depth);
+    const collapsed = Boolean(this.state.collapsed[folder.path]);
+    const type = folderType(folder.path, folder.isRepo);
+    const toggle = () => this.toggleFolder(folder.path);
+    const context = () => this.openGit(folder);
+    const run = toggle;
+
+    const head = new Line();
+    head.add(pad);
+    head.add(' ');
+    head.add(collapsed ? '\uf105' : '\uf107', s(THEME.faint), { run: toggle, context });
+    head.add(' ');
+    head.add(collapsed ? type.icon : type.icon === '\uf07b' ? OPEN_FOLDER_ICON : type.icon, s(type.color), { run, context });
+    head.add(' ');
+    const badge = [];
+    if (folder.status) badge.push([`${statusGlyph(folder.status, this.frame)}`, STATUS_STYLE[folder.status].color]);
+    if (folder.agentCount) badge.push([`${AGENT_ICON}${folder.agentCount}`, THEME.muted]);
+    if (folder.terminalCount) badge.push([`${TERMINAL_ICON} ${folder.terminalCount}`, THEME.faint]);
+    const badgeText = badge.map(([text]) => text).join(' ');
+    const nameMax = cols - head.cols - width(badgeText) - 2;
+    const holdsFocus = folder.panes.some((pane) => pane.paneId === this.focusedPaneId);
+    head.add(truncate(folder.name, nameMax), s(holdsFocus ? THEME.accent : THEME.text, ANSI.bold), { run, context });
+    head.pad(cols - width(badgeText) - 1);
+    badge.forEach(([text, color], i) => {
+      if (i) head.add(' ');
+      head.add(text, s(color));
+    });
+    addSelectable(head, { run, toggle, folder, context });
+
+    if (folder.isRepo && folder.git) {
+      const gitLine = new Line();
+      gitLine.add(pad);
+      gitLine.add('    ');
+      gitLine.add(`${BRANCH_ICON} `, s(THEME.faint), { run: context });
+      let first = true;
+      for (const segment of promptSegments(folder.git)) {
+        if (!first) gitLine.add(' ');
+        first = false;
+        const room = cols - gitLine.cols - 1;
+        if (room <= 1) break;
+        gitLine.add(truncate(segment.text, room), s(segment.color), { run: context });
+      }
+      lines.push(gitLine);
+    } else if (!folder.isRepo && this.state.grouping !== 'tree') {
+      const pathLine = new Line();
+      pathLine.add(pad);
+      pathLine.add('    ');
+      pathLine.add(truncateLeft(folder.path.replace(os.homedir(), '~'), cols - 5), s(THEME.faint));
+      lines.push(pathLine);
+    }
+
+    if (collapsed) return;
+    folder.panes.forEach((pane, index) => {
+      const last = index === folder.panes.length - 1;
+      const branch = last ? '\u2570' : '\u251c';
+      const row = new Line();
+      row.add(pad);
+      const marked = pane.paneId === this.focusedPaneId;
+      // The focused pane gets an accent bar and bold text, like the selected row in herdr's sidebar.
+      if (marked) {
+        row.background = THEME.selected;
+        row.add('\u258c', s(THEME.accent));
+        row.add(` ${branch}\u2500`, s(THEME.border));
+      } else {
+        row.add(`  ${branch}\u2500`, s(THEME.border));
+      }
+      const labelStyle = (color) => s(marked ? THEME.text : color, marked ? ANSI.bold : '');
+      const focusRun = () => this.focus(pane);
+      if (pane.kind === 'agent') {
+        const expanded = this.agentExpanded(pane.paneId);
+        const style = STATUS_STYLE[pane.status] || STATUS_STYLE.unknown;
+        row.add(statusGlyph(pane.status, this.frame), s(style.color), { run: focusRun, context });
+        row.add(' ');
+        row.add(AGENT_ICON, s(THEME.accent), { run: focusRun, context });
+        row.add(' ');
+        const label = pane.name ? `${pane.name} · ${pane.agent}` : pane.agent;
+        const right = style.label;
+        const room = cols - row.cols - width(right) - 4;
+        row.add(truncate(label, room), labelStyle(THEME.text), { run: focusRun, context });
+        const title = displayTitle(pane);
+        if (title && room - width(label) > 4) row.add(` ${truncate(title, room - width(label) - 1)}`, s(THEME.faint), { run: focusRun, context });
+        row.pad(cols - width(right) - 3);
+        row.add(right, s(style.color));
+        row.add(' ');
+        row.add(expanded ? '\uf106' : '\uf107', s(THEME.faint), { run: () => this.toggleAgent(pane.paneId) });
+        addSelectable(row, { run: focusRun, toggle: () => this.toggleAgent(pane.paneId), folder, pane, context });
+        if (expanded) {
+          const rail = last ? '   ' : '  \u2502';
+          const details = [
+            [displayTitle(pane), THEME.muted],
+            [`${pane.tabLabel || pane.tabId} · ${pane.paneId}`, THEME.faint],
+          ];
+          if (pane.cwd !== folder.path) details.push([pane.cwd.replace(folder.path, '.'), THEME.faint]);
+          for (const [text, color] of details) {
+            if (!text) continue;
+            const detail = new Line();
+            detail.add(pad);
+            detail.add(`${rail}   `, s(THEME.border));
+            detail.add(truncate(text, cols - detail.cols - 1), s(color), { run: focusRun });
+            lines.push(detail);
+          }
+        }
+      } else {
+        const style = STATUS_STYLE[pane.status];
+        row.add(style.glyph, s(style.color), { run: focusRun, context });
+        row.add(' ');
+        row.add(TERMINAL_ICON, s(THEME.muted), { run: focusRun, context });
+        row.add(' ');
+        const subdir = pane.cwd !== folder.path ? ` ${pane.cwd.replace(`${folder.path}/`, '')}` : '';
+        const label = `${pane.command || 'shell'}${subdir}`;
+        row.add(truncate(label, cols - row.cols - 1), labelStyle(pane.busy ? THEME.text : THEME.muted), { run: focusRun, context });
+        addSelectable(row, { run: focusRun, folder, pane, context });
+      }
+    });
+  }
+
+  dirLine(node, depth, lines, addSelectable) {
+    this.gap(lines);
+    const key = `dir:${node.path}`;
+    const collapsed = Boolean(this.state.collapsed[key]);
+    const toggle = () => this.toggleFolder(key);
+    const home = os.homedir();
+    const label = depth === 0 && node.path.startsWith(home) ? `~${node.path.slice(home.length)}` : node.name;
+    const line = new Line();
+    line.add(`${'  '.repeat(depth)} `);
+    line.add(collapsed ? '\uf105' : '\uf107', s(THEME.faint), { run: toggle });
+    line.add(' ');
+    line.add(collapsed ? '\uf07b' : OPEN_FOLDER_ICON, s(THEME.faint), { run: toggle });
+    line.add(' ');
+    line.add(truncateLeft(label, this.cols - line.cols - 2), s(THEME.muted), { run: toggle });
+    line.isDir = true;
+    addSelectable(line, { run: toggle, toggle });
   }
 
   projectLines() {
@@ -743,6 +925,7 @@ class Sidebar {
         line.add(badge, s(folder.status ? STATUS_STYLE[folder.status].color : THEME.green), { run, context });
       }
       line.selectIndex = this.selectable.length;
+      line.rowAction = { run, context, select: this.selectable.length };
       this.selectable.push({ run, line: lines.length, project });
       lines.push(line);
     }
@@ -820,8 +1003,7 @@ class Sidebar {
     } else if (this.drag) {
       line.add(' drag to resize', s(THEME.accent));
     } else {
-      const tail = this.state.replace ? ' · R herdr sidebar' : ' · h hide';
-      line.add(truncate(` click focus · right-click git · x close${tail}`, this.cols - 1), s(THEME.faint));
+      line.add(truncate(' ? all actions · click focus · right-click git', this.cols - 1), s(THEME.faint));
     }
     return line;
   }
@@ -861,8 +1043,11 @@ class Sidebar {
       const selectedItem = this.selectable[this.selected];
       const visible = body.slice(this.scroll, this.scroll + viewport);
       for (const line of visible) {
-        if (!this.menu && selectedItem && line.selectIndex === this.selected) line.background = THEME.hover;
+        if (!this.menu && selectedItem && line.selectIndex === this.selected) line.background = line.background === THEME.selected ? THEME.selectedHover : THEME.hover;
       }
+      visible.forEach((line, i) => {
+        if (HEADER_ROWS + i === this.hoverY && line.rowAction && line.background === null) line.background = THEME.hover;
+      });
       while (visible.length < viewport) visible.push(new Line());
       screen = [...header, ...visible, this.footerLine()];
     }
@@ -871,6 +1056,8 @@ class Sidebar {
     let output = ANSI.home;
     screen.forEach((line, y) => {
       for (const hit of line.hits) this.hits.push({ ...hit, y });
+      // The whole row is a click target; segment hits come first so buttons inside it still win.
+      if (line.rowAction) this.hits.push({ x0: 0, x1: cols, y, action: line.rowAction });
       output += `\x1b[${y + 1};1H${line.render(cols)}`;
     });
     for (let y = screen.length; y < rows; y += 1) output += `\x1b[${y + 1};1H${ANSI.clearLine}`;
