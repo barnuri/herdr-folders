@@ -25,7 +25,7 @@ const HIDDEN_COLS = 4;
 const MIN_COLS = 24;
 const MAX_COLS = 120;
 const RESIZE_STEP_COLS = 6;
-const HEADER_ROWS = 3;
+const HEADER_ROWS = 2;
 const FOOTER_ROWS = 1;
 
 const CLOSE_MENU = [
@@ -775,12 +775,22 @@ class Sidebar {
     line.add(' ');
   }
 
+  // Top row: the tabs (Folders, Projects) on the left and the two tools on the right. With no
+  // Projects tab, the Folders tab alone names the panel, so there is no separate title.
   headerLines() {
     const cols = this.cols;
-    const title = new Line();
-    title.background = THEME.surface;
-    title.add(' ');
-    title.add('\uf07c FOLDERS', s(THEME.text, ANSI.bold));
+    const top = new Line();
+    top.background = THEME.surface;
+    top.add(' ');
+    const tab = (label, view) => {
+      const active = this.view === view;
+      top.add(` ${label} `, active ? `${bg(THEME.hover)}${fg(THEME.accent)}${ANSI.bold}` : s(THEME.muted), { run: () => this.setView(view) });
+    };
+    tab(`\uf07b Folders ${this.folders.length}`, 'folders');
+    if (this.projectsEnabled()) {
+      top.add(' ');
+      tab(`\uf503 Projects ${this.projects.length || (this.discovering ? '…' : 0)}`, 'projects');
+    }
     const tools = [
       ...(this.collapsible()
         ? [
@@ -792,39 +802,12 @@ class Sidebar {
       ['\uf101', () => this.toggleHidden(), THEME.muted],
       ['\uf013', () => this.openActions(), this.menu === 'actions' ? THEME.accent : THEME.muted],
     ];
-    const toolsWidth = tools.length * 2;
-    title.pad(Math.max(title.cols + 1, cols - toolsWidth));
-    for (const [glyph, run, color] of tools) this.button(title, glyph, run, color);
+    top.pad(Math.max(top.cols + 1, cols - tools.length * 2 - 1));
+    for (const [glyph, run, color] of tools) this.button(top, glyph, run, color);
 
-    const summary = new Line();
-    summary.add(' ');
-    const counts = this.counts();
-    const chips = [
-      ['working', counts.working],
-      ['blocked', counts.blocked],
-      ['done', counts.done],
-      ['idle', counts.idle],
-      ['running', counts.running],
-    ].filter(([, n]) => n > 0);
-    if (this.loading) summary.add('loading…', s(THEME.faint));
-    else if (!chips.length) summary.add(`${this.folders.length} folders · nothing running`, s(THEME.faint));
-    for (const [status, n] of chips) {
-      summary.add(`${statusGlyph(status, this.frame)} ${n} ${STATUS_STYLE[status].label}`, s(STATUS_STYLE[status].color));
-      summary.add('  ');
-    }
     const rule = new Line();
-    if (this.projectsEnabled()) {
-      const tab = (label, view) => {
-        const active = this.view === view;
-        rule.add(` ${label} `, active ? `${bg(THEME.hover)}${fg(THEME.accent)}${ANSI.bold}` : s(THEME.muted), { run: () => this.setView(view) });
-      };
-      rule.add('\u2500', s(THEME.border));
-      tab(`\uf07b Folders ${this.folders.length}`, 'folders');
-      rule.add('\u2500', s(THEME.border));
-      tab(`\uf503 Projects ${this.projects.length || (this.discovering ? '…' : 0)}`, 'projects');
-    }
-    rule.add('\u2500'.repeat(Math.max(0, cols - rule.cols)), s(THEME.border));
-    return [title, summary, rule];
+    rule.add('\u2500'.repeat(cols), s(THEME.border));
+    return [top, rule];
   }
 
   bodyLines() {
