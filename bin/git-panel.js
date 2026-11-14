@@ -12,7 +12,7 @@ const { logError } = require('../lib/log');
 
 const REFRESH_MS = 3000;
 const FILE_STATUS_COLOR = { M: THEME.yellow, A: THEME.green, D: THEME.red, R: THEME.blue, C: THEME.blue, T: THEME.yellow, U: THEME.magenta, '?': THEME.green };
-const DIFF_BG = { add: [22, 52, 32], del: [66, 26, 32] };
+const DIFF_BG = { add: [32, 52, 42], del: [62, 36, 48] };
 
 const s = (color, extra = '') => `${extra}${fg(color)}`;
 
@@ -408,14 +408,14 @@ class GitPanel {
     const fitted = this.commitMessage ? truncateLeft(text, widthCols - 15) : truncate(text, widthCols - 15);
     const box = ` ${fitted}${active ? '\u2588' : ''}`;
     line.add(' ');
-    line.add(box.padEnd(widthCols - 13), `${bg(active ? 237 : THEME.surface)}${fg(this.commitMessage ? THEME.text : THEME.faint)}`, {
+    line.add(box.padEnd(widthCols - 13), `${bg(active ? THEME.hover : THEME.surface)}${fg(this.commitMessage ? THEME.text : THEME.faint)}`, {
       run: () => {
         this.focus = 'commit';
         this.render();
       },
     });
     line.add(' ');
-    line.add(' \uf00c Commit ', `${bg(THEME.accent)}${fg(16)}${ANSI.bold}`, { run: () => this.commit() });
+    line.add(' \uf00c Commit ', `${bg(THEME.accent)}${fg(THEME.base)}${ANSI.bold}`, { run: () => this.commit() });
     return line;
   }
 
@@ -427,7 +427,7 @@ class GitPanel {
       const index = this.listScroll + offset;
       const line = new Line();
       const selected = index === this.selected;
-      if (selected) line.background = this.focus === 'list' ? 238 : THEME.hover;
+      if (selected) line.background = this.focus === 'list' ? THEME.selected : THEME.hover;
       const pick = () => this.select(index);
       if (entry.type === 'group') {
         const collapsed = this.collapsedGroups[entry.group.id];
@@ -482,7 +482,7 @@ class GitPanel {
       if (row.type === 'meta') {
         line.add(` ${truncate(text, dw - 2)}`, s(THEME.faint, ANSI.italic));
       } else if (row.type === 'hunk') {
-        line.background = 236;
+        line.background = THEME.hover;
         line.add(` ${truncate(text, dw - 2)}`, s(THEME.cyan));
       } else {
         const oldNo = row.oldNo ? String(row.oldNo).padStart(numberWidth) : ' '.repeat(numberWidth);
@@ -508,7 +508,7 @@ class GitPanel {
     line.background = THEME.surface;
     if (this.confirm) {
       line.add(` ${this.confirm.text} `, s(THEME.yellow, ANSI.bold));
-      line.add(' Yes (y) ', `${bg(THEME.red)}${fg(16)}`, { run: () => this.onKey('y') });
+      line.add(' Yes (y) ', `${bg(THEME.red)}${fg(THEME.base)}`, { run: () => this.onKey('y') });
       line.add(' ');
       line.add(' No (n) ', `${bg(THEME.hover)}${fg(THEME.text)}`, { run: () => this.onKey('n') });
     } else if (this.busy) {

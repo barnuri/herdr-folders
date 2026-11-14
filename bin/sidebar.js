@@ -1092,7 +1092,7 @@ class Sidebar {
       add(() => {});
       add((line) => {
         line.add('  ');
-        line.add(' Close (y) ', `${bg(THEME.red)}${fg(16)}${ANSI.bold}`, { run: () => this.confirmClose() });
+        line.add(' Close (y) ', `${bg(THEME.red)}${fg(THEME.base)}${ANSI.bold}`, { run: () => this.confirmClose() });
         line.add('  ');
         line.add(' Cancel (n) ', `${bg(THEME.hover)}${fg(THEME.text)}`, {
           run: () => {

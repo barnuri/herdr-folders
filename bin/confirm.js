@@ -33,7 +33,7 @@ async function main() {
     const name = pane.kind === 'agent' ? pane.agent : pane.command || 'shell';
     out.push(`  ${fg(style.color)}${statusGlyph(pane.status)}${ANSI.reset} ${truncate(`${name}  ${pane.cwd.replace(os.homedir(), '~')}`, cols - 6)}\n`);
   }
-  out.push(`\n ${bg(THEME.red)}${fg(16)} Close ${targets.length} (y) ${ANSI.reset}  ${bg(THEME.hover)}${fg(THEME.text)} Cancel (n) ${ANSI.reset}\n`);
+  out.push(`\n ${bg(THEME.red)}${fg(THEME.base)} Close ${targets.length} (y) ${ANSI.reset}  ${bg(THEME.hover)}${fg(THEME.text)} Cancel (n) ${ANSI.reset}\n`);
   process.stdout.write(out.join(''));
   process.stdin.setRawMode(true);
   process.stdin.setEncoding('utf8');
