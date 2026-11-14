@@ -12,9 +12,11 @@ const { folderType, OPEN_FOLDER_ICON, AGENT_ICON, TERMINAL_ICON, BRANCH_ICON } =
 const { promptSegments } = require('../lib/prompt');
 const { ANSI, THEME, STATUS_STYLE, fg, bg, statusGlyph, truncate, truncateLeft, width, Line, parseInput, keyName } = require('../lib/tui');
 const { logError } = require('../lib/log');
+const projectsApi = require('../lib/projects');
 
 const REFRESH_MS = 2500;
 const IDLE_REFRESH_MS = 15000;
+const DISCOVER_MS = 10 * 60 * 1000;
 const SPIN_MS = 120;
 const HIDDEN_COLS = 4;
 const MIN_COLS = 24;
@@ -49,7 +51,79 @@ class Sidebar {
     this.resizing = false;
     this.loading = true;
     this.side = 'right';
+    this.pm = projectsApi.locateProjectManager();
+    this.projects = projectsApi.loadCachedProjects();
+    this.query = '';
+    this.discovering = false;
   }
+
+  // ----- projects (from herdr-project-manager) -------------------------------
+
+  projectsEnabled() {
+    return Boolean(this.pm) && this.state.projectsTab !== false;
+  }
+
+  get view() {
+    return this.state.view === 'projects' && this.projectsEnabled() ? 'projects' : 'folders';
+  }
+
+  setView(view) {
+    this.save((state) => {
+      state.view = view;
+    });
+    this.selected = 0;
+    this.scroll = 0;
+    this.menu = null;
+    if (view === 'projects' && !this.projects.length) this.discover();
+    this.render();
+  }
+
+  async discover() {
+    if (!this.projectsEnabled() || this.discovering) return;
+    this.discovering = true;
+    this.render();
+    try {
+      this.projects = await projectsApi.discoverProjects(this.pm);
+    } catch (error) {
+      this.fail(error);
+    } finally {
+      this.discovering = false;
+      this.render();
+    }
+  }
+
+  async openProject(project, mode) {
+    // An open folder is focused instead of opening a second workspace for it.
+    const folder = this.folders.find((candidate) => candidate.path === project.path);
+    if (folder && mode !== 'tab' && folder.panes.length) {
+      await this.focus(folder.panes[0]);
+      return;
+    }
+    await projectsApi.openProject(project, mode);
+    this.flash(`opened ${project.name} as a ${mode === 'tab' ? 'tab' : 'workspace'}`, THEME.green);
+    this.refresh();
+  }
+
+  onProjectKey(key, raw) {
+    if (key === 'backspace') this.query = this.query.slice(0, -1);
+    else if (key === 'escape') {
+      if (this.query) this.query = '';
+      else return this.setView('folders');
+    } else if (raw === '\x14') {
+      const item = this.selectable[this.selected];
+      if (item?.project) this.guard(() => this.openProject(item.project, 'tab'));
+      return undefined;
+    } else if (raw === '\x12') {
+      this.discover();
+      return undefined;
+    } else if (raw.length === 1 && raw >= ' ' && raw !== '\x7f') this.query += raw;
+    else return false;
+    this.selected = 0;
+    this.scroll = 0;
+    this.render();
+    return undefined;
+  }
+
 
   get cols() {
     return process.stdout.columns || 40;
@@ -81,6 +155,10 @@ class Sidebar {
     }, SPIN_MS);
     this.render();
     this.refresh();
+    if (this.projectsEnabled()) {
+      this.discover();
+      setInterval(() => this.discover(), DISCOVER_MS);
+    }
     this.applyWidth(this.state.hidden ? HIDDEN_COLS : this.state.width);
   }
 
@@ -295,7 +373,7 @@ class Sidebar {
   onInput(chunk) {
     for (const event of parseInput(chunk)) {
       if (event.type === 'mouse') this.onMouse(event);
-      else this.onKey(keyName(event.key));
+      else this.onKey(keyName(event.key), event.key);
     }
   }
 
@@ -338,7 +416,12 @@ class Sidebar {
     }
   }
 
-  onKey(key) {
+  onKey(key, raw = key) {
+    if (key === 'tab' && this.projectsEnabled() && !this.menu) {
+      this.setView(this.view === 'projects' ? 'folders' : 'projects');
+      return;
+    }
+    if (this.view === 'projects' && !this.menu && this.onProjectKey(key, raw) !== false) return;
     if (this.menu && typeof this.menu === 'object') {
       if (key === 'y' || key === 'enter') this.guard(() => this.confirmClose());
       else if (key === 'n' || key === 'escape' || key === 'q') {
@@ -494,11 +577,22 @@ class Sidebar {
       summary.add('  ');
     }
     const rule = new Line();
-    rule.add('\u2500'.repeat(cols), s(THEME.border));
+    if (this.projectsEnabled()) {
+      const tab = (label, view) => {
+        const active = this.view === view;
+        rule.add(` ${label} `, active ? `${bg(THEME.hover)}${fg(THEME.accent)}${ANSI.bold}` : s(THEME.muted), { run: () => this.setView(view) });
+      };
+      rule.add('\u2500', s(THEME.border));
+      tab(`\uf07b Folders ${this.folders.length}`, 'folders');
+      rule.add('\u2500', s(THEME.border));
+      tab(`\uf503 Projects ${this.projects.length || (this.discovering ? '…' : 0)}`, 'projects');
+    }
+    rule.add('\u2500'.repeat(Math.max(0, cols - rule.cols)), s(THEME.border));
     return [title, summary, rule];
   }
 
   bodyLines() {
+    if (this.view === 'projects') return this.projectLines();
     const lines = [];
     this.selectable = [];
     const cols = this.cols;
@@ -619,6 +713,47 @@ class Sidebar {
     return lines;
   }
 
+  projectLines() {
+    const lines = [];
+    this.selectable = [];
+    const cols = this.cols;
+    const search = new Line();
+    search.add(' \uf002 ', s(THEME.faint));
+    search.add(this.query ? `${this.query}\u2588` : 'type to filter', s(this.query ? THEME.text : THEME.faint));
+    if (this.discovering) {
+      search.pad(cols - 4);
+      search.add(statusGlyph('working', this.frame), s(THEME.amber));
+    }
+    lines.push(search);
+    const openPaths = new Map(this.folders.map((folder) => [folder.path, folder]));
+    const projects = projectsApi.filterProjects(this.projects, this.query);
+    for (const project of projects) {
+      const folder = openPaths.get(project.path);
+      const type = folderType(project.path, true);
+      const line = new Line();
+      const run = () => this.openProject(project, 'workspace');
+      const context = () => this.openProject(project, 'tab');
+      line.add('  ');
+      line.add(type.icon, s(type.color), { run, context });
+      line.add(' ');
+      const badge = folder ? (folder.status ? statusGlyph(folder.status, this.frame) : '\u25cf') : '';
+      line.add(truncate(project.name, cols - line.cols - 4), s(folder ? THEME.text : THEME.muted, folder ? ANSI.bold : ''), { run, context });
+      if (badge) {
+        line.pad(cols - 3);
+        line.add(badge, s(folder.status ? STATUS_STYLE[folder.status].color : THEME.green), { run, context });
+      }
+      line.selectIndex = this.selectable.length;
+      this.selectable.push({ run, line: lines.length, project });
+      lines.push(line);
+    }
+    if (!projects.length) {
+      const empty = new Line();
+      empty.add(this.discovering ? '  discovering projects…' : this.query ? '  no match' : '  no projects (check project-manager globs)', s(THEME.faint));
+      lines.push(empty);
+    }
+    return lines;
+  }
+
   menuLines() {
     const lines = [];
     const cols = this.cols;
@@ -680,6 +815,8 @@ class Sidebar {
     line.background = THEME.surface;
     if (this.message) {
       line.add(` ${truncate(this.message.text, this.cols - 2)}`, s(this.message.color));
+    } else if (this.view === 'projects' && !this.drag) {
+      line.add(truncate(' enter open · right-click/^T tab · ^R rescan · tab folders', this.cols - 1), s(THEME.faint));
     } else if (this.drag) {
       line.add(' drag to resize', s(THEME.accent));
     } else {

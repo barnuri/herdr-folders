@@ -9,6 +9,7 @@ const { collect } = require('../lib/snapshot');
 const { planClose, CLOSE_MODES } = require('../lib/model');
 const { updateState, loadState, queuePanelCommand } = require('../lib/state');
 const { promptText } = require('../lib/prompt');
+const projectsApi = require('../lib/projects');
 const { toggleSidebar, openSidebar, closeSidebar, ensureDock, replaceOn, replaceOff } = require('../lib/panel');
 
 const USAGE = `herdr-folders — control the folders panel (all output is JSON)
@@ -26,6 +27,10 @@ const USAGE = `herdr-folders — control the folders panel (all output is JSON)
   panel hide|show               collapse the sidebar to a strip / restore it
   panel grow|shrink [cols]      resize the sidebar (default 6 columns)
   panel width <cols>            set the sidebar width
+  projects [filter] [--rescan]  projects from herdr-project-manager (cached; --rescan rediscovers)
+  open-project <filter> [--tab] open the best match as a workspace (or a tab)
+  projects-tab on|off           show or hide the Projects tab in the panel
+  view folders|projects         switch the panel's tab
   git <folder>                  open the git changes panel for a folder
   confirm-close <mode>          open a popup that asks before closing
   git-status <folder>           git summary and changed files
@@ -174,6 +179,24 @@ async function main(argv) {
       return { replace: loadState().replace };
     case 'dock':
       return ensureDock();
+    case 'projects': {
+      const pm = projectsApi.locateProjectManager();
+      if (!pm) throw new Error('herdr-project-manager is not installed');
+      const projects = flags.has('--rescan') ? await projectsApi.discoverProjects(pm) : projectsApi.loadCachedProjects();
+      return projectsApi.filterProjects(projects, rest[0] || '');
+    }
+    case 'open-project': {
+      const [match] = projectsApi.filterProjects(projectsApi.loadCachedProjects(), rest[0] || '');
+      if (!match) throw new Error(`no project matches "${rest[0]}" (run: projects --rescan)`);
+      return { opened: match, result: await projectsApi.openProject(match, flags.has('--tab') ? 'tab' : 'workspace') };
+    }
+    case 'projects-tab':
+    case 'view':
+      updateState((state) => {
+        if (command === 'projects-tab') state.projectsTab = rest[0] !== 'off';
+        else state.view = rest[0] === 'projects' ? 'projects' : 'folders';
+      });
+      return { projectsTab: loadState().projectsTab !== false, view: loadState().view || 'folders' };
     case 'git':
       return herdrApi.openPluginPane('git', { placement: 'popup', width: '90%', height: '85%', env: { HERDR_FOLDERS_REPO: resolve(rest[0]) } });
     case 'confirm-close':

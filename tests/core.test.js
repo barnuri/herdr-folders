@@ -11,7 +11,7 @@ const { parseDiff } = require('../bin/git-panel');
 
 const pane = (id, cwd, extra = {}) => ({ pane_id: id, tab_id: 't1', workspace_id: 'w1', cwd, foreground_cwd: cwd, ...extra });
 const idleShell = { shell_pid: 10, foreground_process_group_id: 10 };
-const busyShell = { shell_pid: 10, foreground_process_group_id: 20, foreground_processes: [{ pid: 20, cmdline: 'npm run dev' }] };
+const busyShell = { shell_pid: 10, foreground_process_group_id: 20, foreground_processes: [{ pid: 20, cmdline: '/usr/local/bin/npm run dev' }] };
 
 function fixture() {
   return buildFolders({
@@ -61,6 +61,7 @@ test('isShellBusy and displayTitle', () => {
   assert.equal(isShellBusy(null), false);
   assert.equal(displayTitle({ title: 'OC | Fix login' }), 'Fix login');
   assert.equal(displayTitle({ title: 'Current Folder: ~/x' }), '');
+  assert.equal(displayTitle({ title: 'OpenCode', agent: 'opencode' }), '');
 });
 
 const PORCELAIN = [
@@ -118,4 +119,13 @@ test('parseDiff numbers lines and hides file headers', () => {
   const rows = parseDiff('diff --git a/x b/x\nindex 1..2\n--- a/x\n+++ b/x\n@@ -3,2 +3,3 @@ fn\n ctx\n-old\n+new\n+more\n');
   assert.deepEqual(rows.map((r) => r.type), ['hunk', 'ctx', 'del', 'add', 'add']);
   assert.deepEqual([rows[1].oldNo, rows[1].newNo, rows[2].oldNo, rows[3].newNo, rows[4].newNo], [3, 3, 4, 4, 5]);
+});
+
+test('project filter ranks contiguous and early matches first', () => {
+  const { filterProjects, fuzzyScore } = require('../lib/projects');
+  const projects = [{ name: 'herdr-web-plugin' }, { name: 'herdr-folders' }, { name: 'web-terminal' }];
+  assert.deepEqual(filterProjects(projects, 'hfold').map((p) => p.name), ['herdr-folders']);
+  assert.equal(filterProjects(projects, 'web')[0].name, 'web-terminal');
+  assert.equal(fuzzyScore('abc', 'x'), null);
+  assert.equal(filterProjects(projects, '').length, 3);
 });
