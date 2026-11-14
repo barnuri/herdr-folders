@@ -10,7 +10,8 @@ on a free local model. Re-record it with the [`herdr-folders-demo` skill](skills
 ## Features
 
 - **Replaces herdr's sidebar:** `replace on` hides herdr's own sidebar (through two managed lines
-  in `config.toml`) and docks this panel on the left of every tab, including new ones. The `↶` button
+  in `config.toml`) and shows this panel on the left. It is one panel for all tabs, like herdr's:
+  when you switch tabs, the same panel process moves to the tab you see, with its state. The `↶` button
   (or `R`, or `replace off`) restores herdr's sidebar and closes the panels.
 - **Projects tab (optional):** when [herdr-project-manager](https://github.com/barnuri/herdr-project-manager)
   is installed, a second tab lists its projects, using its own globs and excludes. Type to filter,
@@ -22,8 +23,13 @@ on a free local model. Re-record it with the [`herdr-folders-demo` skill](skills
 - **Two groupings:** flat, one group per folder (default), or a tree that nests folders by path,
   with single-child directories merged (`sandbox/private`). Toggle with the toolbar button, `v`, or
   `grouping tree|folder`.
+- **Right-click menus:** right-click an agent or shell to focus it, close it (asks first), open a
+  new tab in its folder, or see git changes. Right-click a folder for new tab, git changes, and
+  close all of its panes.
 - **Folder cards:** each folder group (its head, git line, agents and shells) sits on its own card
-  colour, alternating blue-grey and plum, so you can see where a folder starts and ends.
+  colour, alternating blue-grey and plum, with a stripe in the folder's colour down its left edge,
+  so you can see where a folder starts and ends. Narrow panels (phones) drop the state words and
+  keep the colour-coded icons.
 - **Shells read like agents:** shell name (`zsh`, `bash`) or the running command, with `ready` or
   `running` on the right.
 - **Easy targets:** every agent and shell is a two-row card (name, then its title or tab), and a
@@ -33,8 +39,8 @@ on a free local model. Re-record it with the [`herdr-folders-demo` skill](skills
   workspace and focuses it (`n`, or `new-tab <folder>`).
 - **Always expanded (optional):** `collapsible off` (or the actions list) removes the chevrons and
   the collapse buttons, and every folder stays open. A folder click then focuses its first pane.
-- **All actions in one place:** the gear button (or `?`) opens a list of every panel action with its
-  key: view, panel, git and bulk close.
+- **Settings and actions:** the toolbar keeps only hide and the gear. The gear (or `?`) opens a list
+  of every panel action with its icon and key: view, panel, folder and bulk close.
 - **Folder tree:** one node per folder, with a type icon (rust, go, python, bun, typescript, node, java, helm, docker, agent, git, plain). Under it are its agents and terminals. A pane that runs an agent is shown once, as an agent.
 - **herdr statuses:** agents show working (spinner), blocked, done, idle and unknown. Terminals show `›` at the shell prompt, or `▶ <command>` while something runs. Folders show the most urgent status. Folders with active agents sort first.
 - **Git line per folder:** `branch ↓behind ↑ahead +added ?untracked ±modified -deleted !conflicts`, or `=` when clean.
