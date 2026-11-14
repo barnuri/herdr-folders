@@ -22,8 +22,13 @@ on a free local model. Re-record it with the [`herdr-folders-demo` skill](skills
 - **Two groupings:** flat, one group per folder (default), or a tree that nests folders by path,
   with single-child directories merged (`sandbox/private`). Toggle with the toolbar button, `v`, or
   `grouping tree|folder`.
-- **Easy targets:** every row is clickable across its full width, the row under the pointer is
-  highlighted, and a blank row separates folder groups (`s` or `spacing compact` removes it).
+- **Easy targets:** every agent and shell is a two-row card (name, then its title or tab), and a
+  click anywhere on the card works. The card under the pointer is highlighted. `s` or
+  `spacing compact` goes back to one-row items.
+- **New tab per folder:** the `+` at the end of a folder row opens a shell tab in that folder's
+  workspace and focuses it (`n`, or `new-tab <folder>`).
+- **Always expanded (optional):** `collapsible off` (or the actions list) removes the chevrons and
+  the collapse buttons, and every folder stays open. A folder click then focuses its first pane.
 - **All actions in one place:** the gear button (or `?`) opens a list of every panel action with its
   key: view, panel, git and bulk close.
 - **Folder tree:** one node per folder, with a type icon (rust, go, python, bun, typescript, node, java, helm, docker, agent, git, plain). Under it are its agents and terminals. A pane that runs an agent is shown once, as an agent.
@@ -61,7 +66,8 @@ to expand.
 | `tab` | switch between the Folders and Projects tabs |
 | `?` / gear | all actions |
 | `v` | flat or tree grouping |
-| `s` | comfortable or compact spacing |
+| `s` | two-row or one-row items |
+| `n` | new tab in the selected folder |
 | `R` | restore herdr's sidebar (in replace mode) |
 
 ## Git panel keys
@@ -80,6 +86,8 @@ node bin/folders.js open-project web-shop [--tab]
 node bin/folders.js view projects|folders
 node bin/folders.js grouping tree|folder
 node bin/folders.js spacing compact|comfortable
+node bin/folders.js collapsible on|off
+node bin/folders.js new-tab ~/repo
 node bin/folders.js collapse-all | expand-all | expand-agents | collapse-agents
 node bin/folders.js close terminals                  # dry run: lists what would close
 node bin/folders.js close idle-agents-and-empty-folders --yes

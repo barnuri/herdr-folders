@@ -21,6 +21,7 @@ const USAGE = `herdr-folders — control the folders panel (all output is JSON)
   close <mode> [--yes]          modes: ${Object.keys(CLOSE_MODES).join(', ')}
                                 without --yes only lists what would close
   focus <pane_id>               focus an agent or terminal
+  new-tab <folder>              open a shell tab in the folder's workspace and focus it
   replace on|off                replace herdr's own sidebar with this panel (on every tab), or restore it
   replace                       show whether replace mode is on
   panel toggle|open|close       open or close the panel in the focused tab (close all: every tab)
@@ -32,7 +33,8 @@ const USAGE = `herdr-folders — control the folders panel (all output is JSON)
   projects-tab on|off           show or hide the Projects tab in the panel
   view folders|projects         switch the panel's tab
   grouping folder|tree          one flat group per folder (default), or folders nested by path
-  spacing comfortable|compact   a blank row between folder groups (default), or none
+  collapsible on|off            allow collapsing folders, or keep every folder expanded
+  spacing comfortable|compact   two-line rows for panes (default), or one-line rows
   git <folder>                  open the git changes panel for a folder
   confirm-close <mode>          open a popup that asks before closing
   git-status <folder>           git summary and changed files
@@ -200,6 +202,21 @@ async function main(argv) {
         state.grouping = rest[0];
       });
       return { grouping: rest[0] };
+    case 'new-tab': {
+      const folderPath = resolve(rest[0]);
+      const { folders } = await collect({ withGit: false });
+      const folder = folders.find((candidate) => candidate.path === folderPath);
+      const workspaceId = folder?.panes[0]?.workspaceId;
+      const name = path.basename(folderPath);
+      return herdrApi.herdr(workspaceId
+        ? ['tab', 'create', '--workspace', workspaceId, '--cwd', folderPath, '--label', name, '--focus']
+        : ['workspace', 'create', '--cwd', folderPath, '--label', name, '--focus']);
+    }
+    case 'collapsible':
+      updateState((state) => {
+        state.collapsible = rest[0] !== 'off';
+      });
+      return { collapsible: rest[0] !== 'off' };
     case 'spacing':
       if (!['compact', 'comfortable'].includes(rest[0])) throw new Error('spacing needs compact or comfortable');
       updateState((state) => {

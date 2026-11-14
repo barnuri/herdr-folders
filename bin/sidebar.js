@@ -309,6 +309,21 @@ class Sidebar {
     this.render();
   }
 
+  collapsible() {
+    return this.state.collapsible !== false;
+  }
+
+  isCollapsed(key) {
+    return this.collapsible() && Boolean(this.state.collapsed[key]);
+  }
+
+  toggleCollapsible() {
+    this.save((state) => {
+      state.collapsible = state.collapsible === false;
+    });
+    this.render();
+  }
+
   toggleSpacing() {
     this.save((state) => {
       state.spacing = state.spacing === 'compact' ? 'comfortable' : 'compact';
@@ -355,6 +370,17 @@ class Sidebar {
     this.flash(`focused ${pane.kind === 'agent' ? pane.agent : 'terminal'} ${pane.paneId}`);
   }
 
+  // New shell tab in the folder's workspace (or a new workspace when it has none), focused.
+  async newTab(folder) {
+    const workspaceId = folder.panes.find((pane) => pane.paneId === this.focusedPaneId)?.workspaceId || folder.panes[0]?.workspaceId;
+    const args = workspaceId
+      ? ['tab', 'create', '--workspace', workspaceId, '--cwd', folder.path, '--label', folder.name, '--focus']
+      : ['workspace', 'create', '--cwd', folder.path, '--label', folder.name, '--focus'];
+    await herdrApi.herdr(args);
+    this.flash(`new tab in ${folder.name}`, THEME.green);
+    this.refresh();
+  }
+
   async openGit(folder) {
     if (!folder.isRepo) {
       this.flash(`${folder.name} is not a git repo`, THEME.yellow);
@@ -387,12 +413,17 @@ class Sidebar {
     const folder = this.menuFolder;
     const sections = [
       ['View', [
-        ['\uf103', 'Expand all folders', 'e', then(() => this.setAllCollapsed(false))],
-        ['\uf102', 'Collapse all folders', 'c', then(() => this.setAllCollapsed(true))],
+        ...(this.collapsible()
+          ? [
+              ['\uf103', 'Expand all folders', 'e', then(() => this.setAllCollapsed(false))],
+              ['\uf102', 'Collapse all folders', 'c', then(() => this.setAllCollapsed(true))],
+            ]
+          : []),
+        ['\uf0dc', this.collapsible() ? 'Always expanded (no collapsing)' : 'Allow collapsing folders', '', then(() => this.toggleCollapsible())],
         [AGENT_ICON, this.state.allAgentsExpanded ? 'Collapse agent details' : 'Expand agent details', 'a', then(() => this.toggleAllAgents())],
         ['\uf0e8', tree ? 'Group flat, one per folder' : 'Group as a tree by path', 'v', then(() => this.toggleGrouping())],
         ...(this.pm ? [['\uf503', this.view === 'projects' ? 'Show Folders tab' : 'Show Projects tab', 'tab', then(() => this.setView(this.view === 'projects' ? 'folders' : 'projects'))]] : []),
-        ['\uf07e', this.state.spacing === 'compact' ? 'Spacing: comfortable' : 'Spacing: compact', 's', then(() => this.toggleSpacing())],
+        ['\uf07e', this.state.spacing === 'compact' ? 'Rows: two-line (roomy)' : 'Rows: one-line (compact)', 's', then(() => this.toggleSpacing())],
         ['\uf021', 'Refresh now', 'r', then(() => this.refresh())],
       ]],
       ['Panel', [
@@ -403,8 +434,9 @@ class Sidebar {
           ? ['\uf0e2', "Restore herdr's sidebar", 'R', then(() => this.restoreHerdrSidebar())]
           : ['\uf0c9', "Replace herdr's sidebar", '', then(() => require('../lib/panel').replaceOn())],
       ]],
-      ['Git', [
-        ['\ue702', folder ? `Git changes: ${folder.name}` : 'Git changes (select a folder)', 'g', then(() => (folder ? this.openGit(folder) : this.flash('select a folder first', THEME.yellow)))],
+      ['Folder', [
+        ['\uf067', folder ? `New tab in ${folder.name}` : 'New tab (select a folder)', 'n', then(() => (folder ? this.newTab(folder) : this.flash('select a folder first', THEME.yellow)))],
+      ['\ue702', folder ? `Git changes: ${folder.name}` : 'Git changes (select a folder)', 'g', then(() => (folder ? this.openGit(folder) : this.flash('select a folder first', THEME.yellow)))],
       ]],
       ['Close', CLOSE_MENU.map((entry, i) => ['\uf1f8', `${entry.label} (${planClose(this.folders, entry.mode).length})`, `x ${i + 1}`, () => this.askClose(entry.mode)])],
     ];
@@ -585,6 +617,9 @@ class Sidebar {
       case 's':
         this.toggleSpacing();
         break;
+      case 'n':
+        if (item?.folder) this.guard(() => this.newTab(item.folder));
+        break;
       case '?':
       case 'm':
         this.openActions();
@@ -667,8 +702,12 @@ class Sidebar {
     title.add(' ');
     title.add('\uf07c FOLDERS', s(THEME.text, ANSI.bold));
     const tools = [
-      ['\uf102', () => this.setAllCollapsed(true), THEME.muted],
-      ['\uf103', () => this.setAllCollapsed(false), THEME.muted],
+      ...(this.collapsible()
+        ? [
+            ['\uf102', () => this.setAllCollapsed(true), THEME.muted],
+            ['\uf103', () => this.setAllCollapsed(false), THEME.muted],
+          ]
+        : []),
       [AGENT_ICON, () => this.toggleAllAgents(), this.state.allAgentsExpanded ? THEME.accent : THEME.muted],
       ['\uf0e8', () => this.toggleGrouping(), this.state.grouping === 'tree' ? THEME.accent : THEME.muted],
       ['\uf068', () => this.resizeBy(-RESIZE_STEP_COLS), THEME.muted],
@@ -734,10 +773,10 @@ class Sidebar {
       const walk = (node, depth) => {
         if (node.type === 'folder') {
           this.folderLines(node.folder, depth, lines, addSelectable);
-          if (this.state.collapsed[node.folder.path]) return;
+          if (this.isCollapsed(node.folder.path)) return;
         } else {
           this.dirLine(node, depth, lines, addSelectable);
-          if (this.state.collapsed[`dir:${node.path}`]) return;
+          if (this.isCollapsed(`dir:${node.path}`)) return;
         }
         for (const child of node.children) walk(child, depth + 1);
       };
@@ -753,25 +792,20 @@ class Sidebar {
     return lines;
   }
 
-  gap(lines) {
-    // no gap right under a directory row: its first child belongs to it
-    if (this.state.spacing !== 'compact' && lines.length && !lines[lines.length - 1].isDir) lines.push(new Line());
-  }
-
   folderLines(folder, depth, lines, addSelectable) {
     const cols = this.cols;
-    this.gap(lines);
     const pad = '  '.repeat(depth);
-    const collapsed = Boolean(this.state.collapsed[folder.path]);
+    const collapsed = this.isCollapsed(folder.path);
     const type = folderType(folder.path, folder.isRepo);
-    const toggle = () => this.toggleFolder(folder.path);
+    // With collapsing off, a folder click focuses its first pane instead.
+    const toggle = () => (this.collapsible() ? this.toggleFolder(folder.path) : folder.panes[0] && this.focus(folder.panes[0]));
     const context = () => this.openGit(folder);
     const run = toggle;
 
     const head = new Line();
     head.add(pad);
     head.add(' ');
-    head.add(collapsed ? '\uf105' : '\uf107', s(THEME.faint), { run: toggle, context });
+    head.add(this.collapsible() ? (collapsed ? '\uf105' : '\uf107') : ' ', s(THEME.faint), { run: toggle, context });
     head.add(' ');
     head.add(collapsed ? type.icon : type.icon === '\uf07b' ? OPEN_FOLDER_ICON : type.icon, s(type.color), { run, context });
     head.add(' ');
@@ -780,14 +814,16 @@ class Sidebar {
     if (folder.agentCount) badge.push([`${AGENT_ICON}${folder.agentCount}`, THEME.muted]);
     if (folder.terminalCount) badge.push([`${TERMINAL_ICON} ${folder.terminalCount}`, THEME.faint]);
     const badgeText = badge.map(([text]) => text).join(' ');
-    const nameMax = cols - head.cols - width(badgeText) - 2;
+    const nameMax = cols - head.cols - width(badgeText) - 6;
     const holdsFocus = folder.panes.some((pane) => pane.paneId === this.focusedPaneId);
     head.add(truncate(folder.name, nameMax), s(holdsFocus ? THEME.accent : THEME.text, ANSI.bold), { run, context });
-    head.pad(cols - width(badgeText) - 1);
+    head.pad(cols - width(badgeText) - 5);
     badge.forEach(([text, color], i) => {
       if (i) head.add(' ');
       head.add(text, s(color));
     });
+    head.add(' ');
+    head.add(' + ', `${bg(THEME.hover)}${fg(THEME.green)}${ANSI.bold}`, { run: () => this.newTab(folder) });
     addSelectable(head, { run, toggle, folder, context });
 
     if (folder.isRepo && folder.git) {
@@ -803,90 +839,109 @@ class Sidebar {
         if (room <= 1) break;
         gitLine.add(truncate(segment.text, room), s(segment.color), { run: context });
       }
+      gitLine.selectIndex = head.selectIndex;
+      gitLine.rowAction = head.rowAction;
       lines.push(gitLine);
     } else if (!folder.isRepo && this.state.grouping !== 'tree') {
       const pathLine = new Line();
       pathLine.add(pad);
       pathLine.add('    ');
       pathLine.add(truncateLeft(folder.path.replace(os.homedir(), '~'), cols - 5), s(THEME.faint));
+      pathLine.selectIndex = head.selectIndex;
+      pathLine.rowAction = head.rowAction;
       lines.push(pathLine);
     }
 
     if (collapsed) return;
+    const tall = this.state.spacing !== 'compact';
     folder.panes.forEach((pane, index) => {
       const last = index === folder.panes.length - 1;
       const branch = last ? '\u2570' : '\u251c';
-      const row = new Line();
-      row.add(pad);
       const marked = pane.paneId === this.focusedPaneId;
-      // The focused pane gets an accent bar and bold text, like the selected row in herdr's sidebar.
-      if (marked) {
-        row.background = THEME.selected;
-        row.add('\u258c', s(THEME.accent));
-        row.add(` ${branch}\u2500`, s(THEME.border));
-      } else {
-        row.add(`  ${branch}\u2500`, s(THEME.border));
-      }
-      const labelStyle = (color) => s(marked ? THEME.text : color, marked ? ANSI.bold : '');
       const focusRun = () => this.focus(pane);
+      const labelStyle = (color) => s(marked ? THEME.text : color, marked ? ANSI.bold : '');
+      // Each pane is a card: the main row plus, in comfortable spacing, a second row with its
+      // title. Both rows are one click target and highlight together.
+      const start = (line, first) => {
+        line.add(pad);
+        if (marked) {
+          line.background = THEME.selected;
+          line.add('\u258c', s(THEME.accent));
+        } else {
+          line.add(' ');
+        }
+        line.add(first ? ` ${branch}\u2500` : last ? '   ' : ' \u2502 ', s(THEME.border));
+        return line;
+      };
+      const row = start(new Line(), true);
+      let subtitle;
+      let toggle;
       if (pane.kind === 'agent') {
-        const expanded = this.agentExpanded(pane.paneId);
         const style = STATUS_STYLE[pane.status] || STATUS_STYLE.unknown;
-        row.add(statusGlyph(pane.status, this.frame), s(style.color), { run: focusRun, context });
+        toggle = () => this.toggleAgent(pane.paneId);
+        row.add(statusGlyph(pane.status, this.frame), s(style.color));
         row.add(' ');
-        row.add(AGENT_ICON, s(THEME.accent), { run: focusRun, context });
+        row.add(AGENT_ICON, s(THEME.accent));
         row.add(' ');
         const label = pane.name ? `${pane.name} · ${pane.agent}` : pane.agent;
         const right = style.label;
         const room = cols - row.cols - width(right) - 4;
-        row.add(truncate(label, room), labelStyle(THEME.text), { run: focusRun, context });
+        row.add(truncate(label, room), labelStyle(THEME.text));
         const title = displayTitle(pane);
-        if (title && room - width(label) > 4) row.add(` ${truncate(title, room - width(label) - 1)}`, s(THEME.faint), { run: focusRun, context });
+        if (!tall && title && room - width(label) > 4) row.add(` ${truncate(title, room - width(label) - 1)}`, s(THEME.faint));
         row.pad(cols - width(right) - 3);
         row.add(right, s(style.color));
         row.add(' ');
-        row.add(expanded ? '\uf106' : '\uf107', s(THEME.faint), { run: () => this.toggleAgent(pane.paneId) });
-        addSelectable(row, { run: focusRun, toggle: () => this.toggleAgent(pane.paneId), folder, pane, context });
-        if (expanded) {
-          const rail = last ? '   ' : '  \u2502';
-          const details = [
-            [displayTitle(pane), THEME.muted],
-            [`${pane.tabLabel || pane.tabId} · ${pane.paneId}`, THEME.faint],
-          ];
-          if (pane.cwd !== folder.path) details.push([pane.cwd.replace(folder.path, '.'), THEME.faint]);
-          for (const [text, color] of details) {
-            if (!text) continue;
-            const detail = new Line();
-            detail.add(pad);
-            detail.add(`${rail}   `, s(THEME.border));
-            detail.add(truncate(text, cols - detail.cols - 1), s(color), { run: focusRun });
-            lines.push(detail);
-          }
-        }
+        row.add(this.agentExpanded(pane.paneId) ? '\uf106' : '\uf107', s(THEME.faint), { run: toggle });
+        subtitle = title || (pane.tabLabel ? `tab ${pane.tabLabel}` : pane.paneId);
       } else {
         const style = STATUS_STYLE[pane.status];
-        row.add(style.glyph, s(style.color), { run: focusRun, context });
+        row.add(style.glyph, s(style.color));
         row.add(' ');
-        row.add(TERMINAL_ICON, s(THEME.muted), { run: focusRun, context });
+        row.add(TERMINAL_ICON, s(THEME.muted));
         row.add(' ');
-        const subdir = pane.cwd !== folder.path ? ` ${pane.cwd.replace(`${folder.path}/`, '')}` : '';
-        const label = `${pane.command || 'shell'}${subdir}`;
-        row.add(truncate(label, cols - row.cols - 1), labelStyle(pane.busy ? THEME.text : THEME.muted), { run: focusRun, context });
-        addSelectable(row, { run: focusRun, folder, pane, context });
+        const subdir = pane.cwd !== folder.path ? pane.cwd.replace(`${folder.path}/`, '') : '';
+        row.add(truncate(pane.command || 'shell', cols - row.cols - 1), labelStyle(pane.busy ? THEME.text : THEME.muted));
+        subtitle = [subdir && `./${subdir}`, pane.tabLabel && `tab ${pane.tabLabel}`].filter(Boolean).join(' · ') || pane.paneId;
+      }
+      const item = { run: focusRun, toggle, folder, pane, context };
+      addSelectable(row, item);
+      const attach = (line) => {
+        line.selectIndex = row.selectIndex;
+        line.rowAction = row.rowAction;
+        lines.push(line);
+      };
+      if (tall) {
+        const sub = start(new Line(), false);
+        sub.add('    ');
+        sub.add(truncate(subtitle, cols - sub.cols - 1), s(marked ? THEME.muted : THEME.faint));
+        attach(sub);
+      }
+      if (pane.kind === 'agent' && this.agentExpanded(pane.paneId)) {
+        const details = [[`${pane.tabLabel || pane.tabId} · ${pane.paneId}`, THEME.faint]];
+        if (tall) details.unshift([displayTitle(pane) && displayTitle(pane) !== subtitle ? displayTitle(pane) : '', THEME.muted]);
+        else details.unshift([displayTitle(pane), THEME.muted]);
+        if (pane.cwd !== folder.path) details.push([pane.cwd.replace(folder.path, '.'), THEME.faint]);
+        for (const [text, color] of details) {
+          if (!text) continue;
+          const detail = start(new Line(), false);
+          detail.add('    ');
+          detail.add(truncate(text, cols - detail.cols - 1), s(color));
+          attach(detail);
+        }
       }
     });
   }
 
   dirLine(node, depth, lines, addSelectable) {
-    this.gap(lines);
     const key = `dir:${node.path}`;
-    const collapsed = Boolean(this.state.collapsed[key]);
-    const toggle = () => this.toggleFolder(key);
+    const collapsed = this.isCollapsed(key);
+    const toggle = () => (this.collapsible() ? this.toggleFolder(key) : undefined);
     const home = os.homedir();
     const label = depth === 0 && node.path.startsWith(home) ? `~${node.path.slice(home.length)}` : node.name;
     const line = new Line();
     line.add(`${'  '.repeat(depth)} `);
-    line.add(collapsed ? '\uf105' : '\uf107', s(THEME.faint), { run: toggle });
+    line.add(this.collapsible() ? (collapsed ? '\uf105' : '\uf107') : ' ', s(THEME.faint), { run: toggle });
     line.add(' ');
     line.add(collapsed ? '\uf07b' : OPEN_FOLDER_ICON, s(THEME.faint), { run: toggle });
     line.add(' ');
@@ -1045,9 +1100,10 @@ class Sidebar {
       for (const line of visible) {
         if (!this.menu && selectedItem && line.selectIndex === this.selected) line.background = line.background === THEME.selected ? THEME.selectedHover : THEME.hover;
       }
-      visible.forEach((line, i) => {
-        if (HEADER_ROWS + i === this.hoverY && line.rowAction && line.background === null) line.background = THEME.hover;
-      });
+      const hovered = visible[this.hoverY - HEADER_ROWS];
+      if (hovered?.selectIndex !== undefined) {
+        for (const line of visible) if (line.selectIndex === hovered.selectIndex && line.background === null) line.background = THEME.hover;
+      }
       while (visible.length < viewport) visible.push(new Line());
       screen = [...header, ...visible, this.footerLine()];
     }
