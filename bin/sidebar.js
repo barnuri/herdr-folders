@@ -903,7 +903,7 @@ class Sidebar {
         const room = rightEdge - head.cols - 1;
         if (room < 2) break;
         head.add(' ');
-        head.add(truncate(segment.text, room), s(segment.key === 'branch' ? THEME.faint : segment.color));
+        head.add(truncate(segment.text, room), s(segment.key === 'branch' ? THEME.magenta : segment.color));
       }
     }
     head.pad(cols - width(rightText) - plusWidth - 2);
@@ -939,10 +939,12 @@ class Sidebar {
         row.add(statusGlyph(pane.status, this.frame), s(style.color));
         row.add(' ');
         row.add(AGENT_ICON, s(marked ? THEME.accent : THEME.blue));
-        name = pane.name ? `${pane.name} · ${pane.agent}` : pane.agent;
+        // The icon says it is an agent; the text is what it works on: its session title, then its tab.
+        const tab = pane.tabLabel ? `tab ${pane.tabLabel}` : pane.paneId;
+        name = pane.name || displayTitle(pane) || tab;
         state = style.label;
         stateColor = style.color;
-        subtitle = displayTitle(pane) || (pane.tabLabel ? `tab ${pane.tabLabel}` : pane.paneId);
+        subtitle = name === tab ? pane.paneId : tab;
       } else if (pane.kind === 'plugin') {
         // A plugin's own pane (a mod view, a log): shown with the work in its tab.
         row.add(STATUS_STYLE.plugin.glyph, s(STATUS_STYLE.plugin.color));
