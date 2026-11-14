@@ -443,7 +443,7 @@ class Sidebar {
         [AGENT_ICON, this.state.allAgentsExpanded ? 'Collapse agent details' : 'Expand agent details', 'a', then(() => this.toggleAllAgents())],
         ['\uf0e8', tree ? 'Group flat, one per folder' : 'Group as a tree by path', 'v', then(() => this.toggleGrouping())],
         ...(this.pm ? [['\uf503', this.view === 'projects' ? 'Show Folders tab' : 'Show Projects tab', 'tab', then(() => this.setView(this.view === 'projects' ? 'folders' : 'projects'))]] : []),
-        ['\uf07e', this.state.spacing === 'compact' ? 'Rows: two-line (roomy)' : 'Rows: one-line (compact)', 's', then(() => this.toggleSpacing())],
+        ['\uf07e', this.state.spacing === 'compact' ? 'Taller rows (easier to click)' : 'Compact rows', 's', then(() => this.toggleSpacing())],
         ['\uf021', 'Refresh now', 'r', then(() => this.refresh())],
       ]],
       ['Panel', [
@@ -912,12 +912,23 @@ class Sidebar {
     head.add(' + ', `${bg(THEME.hover)}${fg(THEME.green)}${ANSI.bold}`, { run: () => this.newTab(folder) });
     addSelectable(head, { run: toggle, toggle, folder, context });
     const sub = attachTo(head);
+    // Taller click targets: in comfortable spacing every item gets a blank row under it that
+    // belongs to the same target and highlights with it.
+    const roomy = this.state.spacing !== 'compact';
+    const spacer = (owner, marked = false) => {
+      if (!roomy) return;
+      const line = begin();
+      if (marked) line.background = THEME.selected;
+      attachTo(owner)(line);
+    };
 
     if (!folder.isRepo && this.state.grouping !== 'tree') {
       const pathLine = begin();
       pathLine.add('   ');
       pathLine.add(truncateLeft(folder.path.replace(os.homedir(), '~'), cols - pathLine.cols - 2), s(THEME.faint));
       sub(pathLine);
+    } else {
+      spacer(head);
     }
 
     if (collapsed) return;
@@ -970,6 +981,7 @@ class Sidebar {
         row.add(state, s(stateColor));
       }
       addSelectable(row, { run: focusRun, toggle, folder, pane, context: () => this.openPaneMenu(pane, folder) });
+      spacer(row, marked);
     }
   }
 
