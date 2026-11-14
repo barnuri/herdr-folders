@@ -34,3 +34,15 @@ test('toggleSidebarKey reads the prefix and binding', () => {
   assert.equal(toggleSidebarKey(''), 'ctrl+b, then b');
   assert.equal(toggleSidebarKey('toggle_sidebar = "alt+s"'), 'alt+s');
 });
+
+test('state and config follow the herdr server home given by the plugin config dir', () => {
+  const saved = process.env.HERDR_PLUGIN_CONFIG_DIR;
+  process.env.HERDR_PLUGIN_CONFIG_DIR = '/tmp/demo/home/.config/herdr/plugins/config/barnuri.folders';
+  const { homeDir, stateDir } = require('../lib/state');
+  const { configPath } = require('../lib/herdr-config');
+  assert.equal(homeDir(), '/tmp/demo/home');
+  assert.equal(stateDir(), '/tmp/demo/home/.local/state/herdr-folders');
+  assert.equal(configPath(), '/tmp/demo/home/.config/herdr/config.toml');
+  if (saved === undefined) delete process.env.HERDR_PLUGIN_CONFIG_DIR;
+  else process.env.HERDR_PLUGIN_CONFIG_DIR = saved;
+});

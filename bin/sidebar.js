@@ -15,7 +15,8 @@ const { logError } = require('../lib/log');
 const projectsApi = require('../lib/projects');
 
 const REFRESH_MS = 2500;
-const IDLE_REFRESH_MS = 15000;
+const HIDDEN_CHECK_MS = 5000;
+const GIT_REFRESH_MS = 10000;
 const DISCOVER_MS = 10 * 60 * 1000;
 const SPIN_MS = 120;
 const HIDDEN_COLS = 4;
@@ -148,10 +149,15 @@ class Sidebar {
     for (const signal of ['SIGTERM', 'SIGHUP', 'SIGINT']) process.on(signal, () => process.exit(0));
 
     fs.watchFile(statePath(), { interval: 400 }, () => this.guard(() => this.onStateFile()));
-    this.refreshTimer = setInterval(() => this.refresh(), REFRESH_MS);
+    this.refreshTimer = setInterval(() => {
+      if (this.visible === false && Date.now() - (this.lastCheck || 0) < HIDDEN_CHECK_MS) return;
+      this.lastCheck = Date.now();
+      this.refresh();
+    }, REFRESH_MS);
     this.spinTimer = setInterval(() => {
       this.frame += 1;
-      if (this.folders.some((folder) => folder.panes.some((pane) => pane.status === 'working'))) this.render();
+      // Spinner frames are output to a pty; only the panel the user can see draws them.
+      if (this.visible !== false && this.folders.some((folder) => folder.panes.some((pane) => pane.status === 'working'))) this.render();
     }, SPIN_MS);
     this.render();
     this.refresh();
@@ -202,11 +208,23 @@ class Sidebar {
       if (mine) {
         // Alone in its tab: the user closed every other pane, so the panel goes too.
         if (!panes.some((pane) => pane.tab_id === mine.tab_id && pane.pane_id !== this.paneId)) process.exit(0);
-        // Every tab may hold a panel; only the visible one polls at full speed.
-        const visible = panes.some((pane) => pane.focused && pane.tab_id === mine.tab_id);
-        if (!visible && this.folders.length && Date.now() - (this.lastRefresh || 0) < IDLE_REFRESH_MS) return;
+        // Every tab may hold a panel. A panel in a hidden tab does no work beyond this one
+        // `pane list` every few seconds, so it notices when its tab is shown again.
+        this.visible = panes.some((pane) => pane.focused && pane.tab_id === mine.tab_id);
+        if (!this.visible) {
+          this.hiddenSince = this.hiddenSince || Date.now();
+          return;
+        }
+        this.hiddenSince = null;
       }
-      const { folders } = await collect({ excludePaneIds: this.paneId ? [this.paneId] : [] });
+      // git status is the slow part: refresh it every 10 s and reuse it in between.
+      const withGit = Date.now() - (this.lastGit || 0) >= GIT_REFRESH_MS;
+      const { folders } = await collect({ withGit, excludePaneIds: this.paneId ? [this.paneId] : [] });
+      if (withGit) this.lastGit = Date.now();
+      else {
+        const previous = new Map(this.folders.map((folder) => [folder.path, folder.git]));
+        for (const folder of folders) folder.git = previous.get(folder.path);
+      }
       this.folders = folders;
       // Remember the user's pane: while the panel itself has focus, no listed pane is focused.
       const focused = folders.flatMap((folder) => folder.panes).find((pane) => pane.focused);
@@ -224,6 +242,11 @@ class Sidebar {
   onStateFile() {
     const previousHidden = this.state.hidden;
     this.state = loadState();
+    if (this.state.focusSeq && this.state.focusSeq !== this.lastFocusSeq) {
+      this.lastFocusSeq = this.state.focusSeq;
+      this.lastCheck = Date.now();
+      this.refresh();
+    }
     const command = this.state.command;
     if (command && command.seq !== this.lastCommandSeq) {
       this.lastCommandSeq = command.seq;
@@ -708,15 +731,10 @@ class Sidebar {
             ['\uf103', () => this.setAllCollapsed(false), THEME.muted],
           ]
         : []),
-      [AGENT_ICON, () => this.toggleAllAgents(), this.state.allAgentsExpanded ? THEME.accent : THEME.muted],
-      ['\uf0e8', () => this.toggleGrouping(), this.state.grouping === 'tree' ? THEME.accent : THEME.muted],
-      ['\uf068', () => this.resizeBy(-RESIZE_STEP_COLS), THEME.muted],
-      ['\uf067', () => this.resizeBy(RESIZE_STEP_COLS), THEME.muted],
+      // Everything else lives in the settings list (gear), with the same icons.
       ['\uf101', () => this.toggleHidden(), THEME.muted],
-      ['\uf1f8', () => this.openCloseMenu(), this.menu === 'close' ? THEME.red : THEME.muted],
       ['\uf013', () => this.openActions(), this.menu === 'actions' ? THEME.accent : THEME.muted],
     ];
-    if (this.state.replace) tools.push(['\uf0e2', () => this.restoreHerdrSidebar(), THEME.yellow]);
     const toolsWidth = tools.length * 2;
     title.pad(Math.max(title.cols + 1, cols - toolsWidth));
     for (const [glyph, run, color] of tools) this.button(title, glyph, run, color);
