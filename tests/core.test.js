@@ -139,3 +139,21 @@ test('buildTree nests folders by path and merges single-child directories', () =
   assert.deepEqual(dirKeys(tree).sort(), ['dir:/u/s', 'dir:/u/s/CP', 'dir:/u/s/private/a/b']);
   assert.equal(buildTree([f('/x/one'), f('/x/two')]).map(show).join(','), 'dir:x(folder:one,folder:two)');
 });
+
+test('a plugin pane joins the folder of the work in its tab', () => {
+  const folders = buildFolders({
+    panes: [
+      pane('a1', '/r/orch-skill', { tab_id: 'tx' }),
+      pane('m1', '/plugins/herdr-mods', { tab_id: 'tx', label: 'summarize mod' }),
+      pane('s1', '/plugins/herdr-mods', { tab_id: 'ty' }),
+    ],
+    agents: [{ pane_id: 'a1', agent: 'opencode', agent_status: 'working' }],
+    processInfo: { s1: idleShell },
+    roots: { '/r/orch-skill': '/r/orch-skill', '/plugins/herdr-mods': '/plugins/herdr-mods' },
+    pluginRoots: ['/plugins/herdr-mods'],
+  });
+  const orch = folders.find((f) => f.path === '/r/orch-skill');
+  assert.deepEqual(orch.panes.map((p) => [p.paneId, p.kind]), [['a1', 'agent'], ['m1', 'plugin']]);
+  // a plain shell inside the plugin's repo (someone developing it) stays in that folder
+  assert.deepEqual(folders.find((f) => f.path === '/plugins/herdr-mods').panes.map((p) => p.paneId), ['s1']);
+});
