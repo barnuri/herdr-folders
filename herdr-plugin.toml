@@ -24,6 +24,18 @@ command = ["node", "bin/confirm.js"]
 placement = "popup"
 
 [[actions]]
+id = "replace-on"
+title = "Folders: replace herdr sidebar"
+contexts = ["workspace", "pane"]
+command = ["node", "bin/folders.js", "replace", "on"]
+
+[[actions]]
+id = "replace-off"
+title = "Folders: restore herdr sidebar"
+contexts = ["workspace", "pane"]
+command = ["node", "bin/folders.js", "replace", "off"]
+
+[[actions]]
 id = "toggle-panel"
 title = "Folders: toggle panel"
 contexts = ["workspace", "pane"]
@@ -106,3 +118,19 @@ id = "close-all"
 title = "Folders: close everything"
 contexts = ["workspace", "pane"]
 command = ["node", "bin/folders.js", "confirm-close", "all"]
+
+[[events]]
+on = "tab.created"
+command = ["node", "bin/folders.js", "dock"]
+
+[[events]]
+on = "tab.focused"
+command = ["node", "bin/folders.js", "dock"]
+
+[[events]]
+on = "workspace.created"
+command = ["node", "bin/folders.js", "dock"]
+
+[[events]]
+on = "workspace.focused"
+command = ["node", "bin/folders.js", "dock"]

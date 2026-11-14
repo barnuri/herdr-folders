@@ -9,7 +9,7 @@ const { collect } = require('../lib/snapshot');
 const { planClose, CLOSE_MODES } = require('../lib/model');
 const { updateState, loadState, queuePanelCommand } = require('../lib/state');
 const { promptText } = require('../lib/prompt');
-const { toggleSidebar, openSidebar, findSidebars } = require('../lib/panel');
+const { toggleSidebar, openSidebar, closeSidebar, ensureDock, replaceOn, replaceOff } = require('../lib/panel');
 
 const USAGE = `herdr-folders — control the folders panel (all output is JSON)
 
@@ -20,7 +20,9 @@ const USAGE = `herdr-folders — control the folders panel (all output is JSON)
   close <mode> [--yes]          modes: ${Object.keys(CLOSE_MODES).join(', ')}
                                 without --yes only lists what would close
   focus <pane_id>               focus an agent or terminal
-  panel toggle|open|close       open or close the sidebar in the focused tab
+  replace on|off                replace herdr's own sidebar with this panel (on every tab), or restore it
+  replace                       show whether replace mode is on
+  panel toggle|open|close       open or close the panel in the focused tab (close all: every tab)
   panel hide|show               collapse the sidebar to a strip / restore it
   panel grow|shrink [cols]      resize the sidebar (default 6 columns)
   panel width <cols>            set the sidebar width
@@ -81,12 +83,9 @@ async function panel(sub, arg) {
     case 'toggle':
       return toggleSidebar();
     case 'open':
-      return (await findSidebars()).length ? { action: 'already-open' } : { action: 'opened', result: await openSidebar() };
-    case 'close': {
-      const panes = await findSidebars();
-      await Promise.all(panes.map((pane) => herdrApi.closePane(pane.pane_id)));
-      return { action: 'closed', panes: panes.map((pane) => pane.pane_id) };
-    }
+      return openSidebar();
+    case 'close':
+      return closeSidebar({ all: arg === 'all' });
     case 'hide':
     case 'show':
       updateState((state) => {
@@ -169,6 +168,12 @@ async function main(argv) {
     }
     case 'panel':
       return panel(rest[0], rest[1]);
+    case 'replace':
+      if (rest[0] === 'on') return replaceOn();
+      if (rest[0] === 'off') return replaceOff();
+      return { replace: loadState().replace };
+    case 'dock':
+      return ensureDock();
     case 'git':
       return herdrApi.openPluginPane('git', { placement: 'popup', width: '90%', height: '85%', env: { HERDR_FOLDERS_REPO: resolve(rest[0]) } });
     case 'confirm-close':

@@ -14,6 +14,7 @@ const { ANSI, THEME, STATUS_STYLE, fg, bg, statusGlyph, truncate, truncateLeft, 
 const { logError } = require('../lib/log');
 
 const REFRESH_MS = 2500;
+const IDLE_REFRESH_MS = 15000;
 const SPIN_MS = 120;
 const HIDDEN_COLS = 4;
 const MIN_COLS = 24;
@@ -47,6 +48,7 @@ class Sidebar {
     this.drag = null;
     this.resizing = false;
     this.loading = true;
+    this.side = 'right';
   }
 
   get cols() {
@@ -106,13 +108,30 @@ class Sidebar {
     this.render();
   }
 
+  updateSide(layout) {
+    const me = layout?.panes?.find((pane) => pane.pane_id === this.paneId);
+    if (!me) return;
+    // A panel whose right edge is short of the tab's edge has its movable border on the right.
+    this.side = me.rect.x + me.rect.width < layout.area.x + layout.area.width ? 'left' : 'right';
+  }
+
   async refresh() {
     if (this.refreshing) return;
     this.refreshing = true;
     try {
+      const panes = await herdrApi.listPanes();
+      const mine = panes.find((pane) => pane.pane_id === this.paneId);
+      if (mine) {
+        // Alone in its tab: the user closed every other pane, so the panel goes too.
+        if (!panes.some((pane) => pane.tab_id === mine.tab_id && pane.pane_id !== this.paneId)) process.exit(0);
+        // Every tab may hold a panel; only the visible one polls at full speed.
+        const visible = panes.some((pane) => pane.focused && pane.tab_id === mine.tab_id);
+        if (!visible && this.folders.length && Date.now() - (this.lastRefresh || 0) < IDLE_REFRESH_MS) return;
+      }
       const { folders } = await collect({ excludePaneIds: this.paneId ? [this.paneId] : [] });
       this.folders = folders;
       this.loading = false;
+      this.lastRefresh = Date.now();
       this.render();
     } catch (error) {
       this.fail(error);
@@ -145,16 +164,19 @@ class Sidebar {
     if (!this.paneId || this.resizing) return;
     this.resizing = true;
     try {
-      // The sidebar sits on the right edge, so its movable border is on the left.
       // `pane resize --amount` is a fraction of the split, so convert columns with the tab width.
       const layout = (await herdrApi.herdr(['pane', 'layout', '--pane', this.paneId]).catch(() => null))?.layout;
       const total = layout?.area?.width || this.cols * 3;
+      this.updateSide(layout);
+      // Growing moves the border away from the panel: left for a right-edge panel, right for a left-edge one.
+      const grow = this.side === 'left' ? 'right' : 'left';
+      const shrink = this.side === 'left' ? 'left' : 'right';
       for (let step = 0; step < 8; step += 1) {
         const diff = target - this.cols;
         if (Math.abs(diff) < 1) break;
         const before = this.cols;
         const amount = Math.min(0.9, Math.max(0.005, Math.abs(diff) / total));
-        await herdrApi.resizePane(this.paneId, diff > 0 ? 'left' : 'right', amount.toFixed(4)).catch(() => {});
+        await herdrApi.resizePane(this.paneId, diff > 0 ? grow : shrink, amount.toFixed(4)).catch(() => {});
         await new Promise((resolve) => setTimeout(resolve, 80));
         if (this.cols === before) break;
       }
@@ -285,7 +307,7 @@ class Sidebar {
     if (this.drag) {
       if (event.press && event.motion) {
         // Each step moves the border, so the grip stays under the pointer: apply the delta once.
-        const delta = this.drag.x - event.x;
+        const delta = this.side === 'left' ? event.x - this.drag.x : this.drag.x - event.x;
         if (delta !== 0 && !this.resizing) {
           this.drag.x = event.x;
           this.resizeBy(delta);
@@ -299,7 +321,7 @@ class Sidebar {
       }
     }
     if (!event.press || event.motion) return;
-    if (event.x === 0 && event.button === 0 && !this.state.hidden) {
+    if (event.x === this.gripColumn() && event.button === 0 && !this.state.hidden) {
       this.drag = { x: event.x };
       this.render();
       return;
@@ -379,6 +401,9 @@ class Sidebar {
       case ']':
         this.guard(() => this.resizeBy(RESIZE_STEP_COLS));
         break;
+      case 'R':
+        if (this.state.replace) this.guard(() => this.restoreHerdrSidebar());
+        break;
       case 'h':
         this.guard(() => this.toggleHidden());
         break;
@@ -392,6 +417,16 @@ class Sidebar {
       default:
         break;
     }
+  }
+
+  gripColumn() {
+    return this.side === 'left' ? this.cols - 1 : 0;
+  }
+
+  async restoreHerdrSidebar() {
+    const { replaceOff } = require('../lib/panel');
+    const result = await replaceOff();
+    await herdrApi.herdr(['notification', 'show', 'Folders', '--body', result.hint]).catch(() => {});
   }
 
   move(delta) {
@@ -437,6 +472,7 @@ class Sidebar {
       ['\uf101', () => this.toggleHidden(), THEME.muted],
       ['\uf1f8', () => this.openCloseMenu(), this.menu ? THEME.red : THEME.muted],
     ];
+    if (this.state.replace) tools.push(['\uf0e2', () => this.restoreHerdrSidebar(), THEME.yellow]);
     const toolsWidth = tools.length * 2;
     title.pad(Math.max(title.cols + 1, cols - toolsWidth));
     for (const [glyph, run, color] of tools) this.button(title, glyph, run, color);
@@ -647,7 +683,8 @@ class Sidebar {
     } else if (this.drag) {
       line.add(' drag to resize', s(THEME.accent));
     } else {
-      line.add(truncate(' click focus · right-click git · x close · h hide', this.cols - 1), s(THEME.faint));
+      const tail = this.state.replace ? ' · R herdr sidebar' : ' · h hide';
+      line.add(truncate(` click focus · right-click git · x close${tail}`, this.cols - 1), s(THEME.faint));
     }
     return line;
   }
@@ -693,7 +730,7 @@ class Sidebar {
       screen = [...header, ...visible, this.footerLine()];
     }
 
-    // Column 0 is the drag grip for the left border.
+    // The grip column sits on the movable border: left edge for a right panel, right edge for a left one.
     let output = ANSI.home;
     screen.forEach((line, y) => {
       for (const hit of line.hits) this.hits.push({ ...hit, y });
@@ -702,7 +739,9 @@ class Sidebar {
     for (let y = screen.length; y < rows; y += 1) output += `\x1b[${y + 1};1H${ANSI.clearLine}`;
     if (!this.state.hidden) {
       const gripColor = this.drag ? THEME.accent : THEME.border;
-      for (let y = HEADER_ROWS; y < rows - FOOTER_ROWS; y += 1) output += `\x1b[${y + 1};1H${fg(gripColor)}\u2595${ANSI.reset}`;
+      const column = this.gripColumn() + 1;
+      const glyph = this.side === 'left' ? '\u258f' : '\u2595';
+      for (let y = HEADER_ROWS; y < rows - FOOTER_ROWS; y += 1) output += `\x1b[${y + 1};${column}H${fg(gripColor)}${glyph}${ANSI.reset}`;
     }
     process.stdout.write(output);
   }
