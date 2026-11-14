@@ -6,7 +6,7 @@ const os = require('node:os');
 
 const gitApi = require('../lib/git');
 const { promptSegments } = require('../lib/prompt');
-const { BRANCH_ICON, folderType } = require('../lib/icons');
+const { BRANCH_ICON, PLAIN_FOLDER } = require('../lib/icons');
 const { ANSI, THEME, fg, bg, truncate, truncateLeft, width, Line, parseInput, keyName } = require('../lib/tui');
 const { logError } = require('../lib/log');
 
@@ -373,9 +373,8 @@ class GitPanel {
   toolbar() {
     const line = new Line();
     line.background = THEME.surface;
-    const type = folderType(this.repo, true);
     line.add(' ');
-    line.add(type.icon, s(type.color));
+    line.add(PLAIN_FOLDER.icon, s(PLAIN_FOLDER.color));
     line.add(` ${this.name} `, s(THEME.text, ANSI.bold));
     line.add(`${BRANCH_ICON} `, s(THEME.faint));
     promptSegments(this.summary).forEach((segment, i) => {

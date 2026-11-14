@@ -9,7 +9,7 @@ const herdrApi = require('../lib/herdr');
 const { collect } = require('../lib/snapshot');
 const { planClose, displayTitle, buildTree, dirKeys } = require('../lib/model');
 const { loadState, updateState, statePath, stateDir } = require('../lib/state');
-const { folderType, OPEN_FOLDER_ICON, AGENT_ICON, TERMINAL_ICON, BRANCH_ICON } = require('../lib/icons');
+const { folderType, PLAIN_FOLDER, OPEN_FOLDER_ICON, AGENT_ICON, TERMINAL_ICON, BRANCH_ICON } = require('../lib/icons');
 const { promptSegments } = require('../lib/prompt');
 const { ANSI, THEME, STATUS_STYLE, fg, bg, statusGlyph, truncate, truncateLeft, width, Line, parseInput, keyName } = require('../lib/tui');
 const { logError } = require('../lib/log');
@@ -905,7 +905,7 @@ class Sidebar {
     const head = begin();
     head.add(' ');
     if (this.collapsible()) head.add(collapsed ? '\uf105 ' : '\uf107 ', s(THEME.faint));
-    head.add(type.icon, s(type.color));
+    head.add(PLAIN_FOLDER.icon, s(PLAIN_FOLDER.color));
     head.add(' ');
     const right = [];
     if (folder.status) right.push([`${statusGlyph(folder.status, this.frame)} ${folder.agentCount}`, STATUS_STYLE[folder.status].color]);
@@ -1040,12 +1040,11 @@ class Sidebar {
     const projects = projectsApi.filterProjects(this.projects, this.query);
     for (const project of projects) {
       const folder = openPaths.get(project.path);
-      const type = folderType(project.path, true);
       const line = new Line();
       const run = () => this.openProject(project, 'workspace');
       const context = () => this.openProject(project, 'tab');
       line.add('  ');
-      line.add(type.icon, s(type.color), { run, context });
+      line.add(PLAIN_FOLDER.icon, s(PLAIN_FOLDER.color), { run, context });
       line.add(' ');
       const badge = folder ? (folder.status ? statusGlyph(folder.status, this.frame) : '\u25cf') : '';
       line.add(truncate(project.name, cols - line.cols - 4), s(folder ? THEME.text : THEME.muted, folder ? ANSI.bold : ''), { run, context });
@@ -1147,7 +1146,7 @@ class Sidebar {
       const type = folderType(folder.path, folder.isRepo);
       const color = folder.status ? STATUS_STYLE[folder.status].color : type.color;
       line.add(' ');
-      line.add(folder.status ? statusGlyph(folder.status, this.frame) : type.icon, s(color), { run: () => this.toggleHidden() });
+      line.add(folder.status ? statusGlyph(folder.status, this.frame) : PLAIN_FOLDER.icon, s(color), { run: () => this.toggleHidden() });
       // herdr keeps panes at a minimum width, so the strip has room for short names
       if (this.cols > 6) line.add(` ${truncate(folder.name, this.cols - 4)}`, s(THEME.muted), { run: () => this.toggleHidden() });
       lines.push(line);
