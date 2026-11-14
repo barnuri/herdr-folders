@@ -921,7 +921,6 @@ class Sidebar {
     }
 
     if (collapsed) return;
-    const tall = this.state.spacing !== 'compact';
     for (const pane of folder.panes) {
       const marked = pane.paneId === this.focusedPaneId;
       const focusRun = () => this.focus(pane);
@@ -931,7 +930,6 @@ class Sidebar {
       let name;
       let state;
       let stateColor;
-      let subtitle;
       let toggle;
       if (pane.kind === 'agent') {
         const style = STATUS_STYLE[pane.status] || STATUS_STYLE.unknown;
@@ -944,7 +942,6 @@ class Sidebar {
         name = pane.name || displayTitle(pane) || tab;
         state = style.label;
         stateColor = style.color;
-        subtitle = name === tab ? pane.paneId : tab;
       } else if (pane.kind === 'plugin') {
         // A plugin's own pane (a mod view, a log): shown with the work in its tab.
         row.add(STATUS_STYLE.plugin.glyph, s(STATUS_STYLE.plugin.color));
@@ -953,17 +950,15 @@ class Sidebar {
         name = pane.name;
         state = 'plugin';
         stateColor = THEME.faint;
-        subtitle = pane.tabLabel ? `tab ${pane.tabLabel}` : pane.paneId;
       } else {
         const style = STATUS_STYLE[pane.status];
         row.add(style.glyph, s(style.color));
         row.add(' ');
         row.add(TERMINAL_ICON, s(pane.busy ? THEME.cyan : THEME.green));
-        name = pane.busy ? pane.command : pane.shell || 'shell';
+        // A running command names itself; an idle shell shows its tab's title.
+        name = pane.busy ? pane.command : pane.tabLabel || pane.shell || 'shell';
         state = pane.busy ? 'running' : 'ready';
         stateColor = pane.busy ? THEME.cyan : THEME.faint;
-        const subdir = pane.cwd !== folder.path ? pane.cwd.replace(`${folder.path}/`, '') : '';
-        subtitle = [subdir && `./${subdir}`, pane.tabLabel && `tab ${pane.tabLabel}`, pane.busy && pane.shell && `in ${pane.shell}`].filter(Boolean).join(' · ') || pane.paneId;
       }
       row.add(' ');
       // Narrow panels (phones) drop the state word and keep the colour-coded glyph.
@@ -975,20 +970,6 @@ class Sidebar {
         row.add(state, s(stateColor));
       }
       addSelectable(row, { run: focusRun, toggle, folder, pane, context: () => this.openPaneMenu(pane, folder) });
-      const more = attachTo(row);
-      const detail = (text, color) => {
-        const line = begin();
-        if (marked) line.background = THEME.selected;
-        line.add('      ');
-        line.add(truncate(text, cols - line.cols - 2), s(color));
-        more(line);
-      };
-      if (tall) detail(subtitle, marked ? THEME.muted : THEME.faint);
-      if (pane.kind === 'agent' && this.agentExpanded(pane.paneId)) {
-        if (!tall && displayTitle(pane)) detail(displayTitle(pane), THEME.muted);
-        detail(`${pane.tabLabel || pane.tabId} · ${pane.paneId}`, THEME.faint);
-        if (pane.cwd !== folder.path) detail(pane.cwd.replace(folder.path, '.'), THEME.faint);
-      }
     }
   }
 
