@@ -11,7 +11,10 @@ on a free local model. Re-record it with the [`herdr-folders-demo` skill](skills
 
 - **Replaces herdr's sidebar:** `replace on` hides herdr's own sidebar (through two managed lines
   in `config.toml`) and shows this panel on the left. It is one panel for all tabs, like herdr's:
-  when you switch tabs, the same panel process moves to the tab you see, with its state. The `↶` button
+  when you switch tabs (in the same workspace or another), the same panel process moves to the tab
+  you see, with its state. Every other tab holds a light placeholder at the left that shows the
+  panel's last frame at the same width, so a tab looks right at once and the move is one
+  `pane move` plus one `pane close`. The `↶` button
   (or `R`, or `replace off`) restores herdr's sidebar and closes the panels.
 - **Projects tab (optional):** when [herdr-project-manager](https://github.com/barnuri/herdr-project-manager)
   is installed, a second tab lists its projects, using its own globs and excludes. Type to filter,

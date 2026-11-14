@@ -12,6 +12,12 @@ command = ["node", "bin/sidebar.js"]
 placement = "split"
 
 [[panes]]
+id = "slot"
+title = "Folders slot"
+command = ["node", "bin/slot.js"]
+placement = "split"
+
+[[panes]]
 id = "git"
 title = "Git changes"
 command = ["node", "bin/git-panel.js"]
@@ -133,4 +139,8 @@ command = ["node", "bin/folders.js", "dock"]
 
 [[events]]
 on = "workspace.focused"
+command = ["node", "bin/folders.js", "dock"]
+
+[[events]]
+on = "pane.focused"
 command = ["node", "bin/folders.js", "dock"]

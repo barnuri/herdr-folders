@@ -3,16 +3,18 @@
 
 const fs = require('node:fs');
 const os = require('node:os');
+const path = require('node:path');
 
 const herdrApi = require('../lib/herdr');
 const { collect } = require('../lib/snapshot');
 const { planClose, displayTitle, buildTree, dirKeys } = require('../lib/model');
-const { loadState, updateState, statePath } = require('../lib/state');
+const { loadState, updateState, statePath, stateDir } = require('../lib/state');
 const { folderType, OPEN_FOLDER_ICON, AGENT_ICON, TERMINAL_ICON, BRANCH_ICON } = require('../lib/icons');
 const { promptSegments } = require('../lib/prompt');
 const { ANSI, THEME, STATUS_STYLE, fg, bg, statusGlyph, truncate, truncateLeft, width, Line, parseInput, keyName } = require('../lib/tui');
 const { logError } = require('../lib/log');
 const projectsApi = require('../lib/projects');
+const { fitWidth } = require('../lib/fit');
 
 const REFRESH_MS = 2500;
 const HIDDEN_CHECK_MS = 5000;
@@ -192,11 +194,12 @@ class Sidebar {
     this.render();
   }
 
-  updateSide(layout) {
-    const me = layout?.panes?.find((pane) => pane.pane_id === this.paneId);
-    if (!me) return;
-    // A panel whose right edge is short of the tab's edge has its movable border on the right.
-    this.side = me.rect.x + me.rect.width < layout.area.x + layout.area.width ? 'left' : 'right';
+  // The placeholder slots in other tabs show this frame, so a tab looks right before the panel
+  // arrives. Written at most once a second, and only while the panel is visible.
+  saveFrame(output) {
+    if (this.visible === false || Date.now() - (this.frameSavedAt || 0) < 1000) return;
+    this.frameSavedAt = Date.now();
+    fs.promises.writeFile(path.join(stateDir(), 'frame.ansi'), output).catch(() => {});
   }
 
   async refresh() {
@@ -277,22 +280,7 @@ class Sidebar {
     if (!this.paneId || this.resizing) return;
     this.resizing = true;
     try {
-      // `pane resize --amount` is a fraction of the split, so convert columns with the tab width.
-      const layout = (await herdrApi.herdr(['pane', 'layout', '--pane', this.paneId]).catch(() => null))?.layout;
-      const total = layout?.area?.width || this.cols * 3;
-      this.updateSide(layout);
-      // Growing moves the border away from the panel: left for a right-edge panel, right for a left-edge one.
-      const grow = this.side === 'left' ? 'right' : 'left';
-      const shrink = this.side === 'left' ? 'left' : 'right';
-      for (let step = 0; step < 8; step += 1) {
-        const diff = target - this.cols;
-        if (Math.abs(diff) < 1) break;
-        const before = this.cols;
-        const amount = Math.min(0.9, Math.max(0.005, Math.abs(diff) / total));
-        await herdrApi.resizePane(this.paneId, diff > 0 ? grow : shrink, amount.toFixed(4)).catch(() => {});
-        await new Promise((resolve) => setTimeout(resolve, 80));
-        if (this.cols === before) break;
-      }
+      this.side = await fitWidth(this.paneId, target, () => this.cols);
     } finally {
       this.resizing = false;
       this.render();
@@ -1209,6 +1197,7 @@ class Sidebar {
       for (let y = HEADER_ROWS; y < rows - FOOTER_ROWS; y += 1) output += `\x1b[${y + 1};${column}H${fg(gripColor)}${glyph}${ANSI.reset}`;
     }
     process.stdout.write(output);
+    this.saveFrame(output);
   }
 }
 
