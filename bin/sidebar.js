@@ -964,14 +964,6 @@ class Sidebar {
         name = pane.name || displayTitle(pane) || tab;
         state = style.label;
         stateColor = style.color;
-      } else if (pane.kind === 'plugin') {
-        // A plugin's own pane (a mod view, a log): shown with the work in its tab.
-        row.add(STATUS_STYLE.plugin.glyph, s(STATUS_STYLE.plugin.color));
-        row.add(' ');
-        row.add('\uf12e', s(THEME.magenta));
-        name = pane.name;
-        state = 'plugin';
-        stateColor = THEME.faint;
       } else {
         const style = STATUS_STYLE[pane.status];
         row.add(style.glyph, s(style.color));

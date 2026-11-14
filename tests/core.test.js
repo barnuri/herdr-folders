@@ -149,7 +149,7 @@ test('buildTree nests folders by path and merges single-child directories', () =
   assert.equal(buildTree([f('/x/one'), f('/x/two')]).map(show).join(','), 'dir:x(folder:one,folder:two)');
 });
 
-test('a plugin pane joins the folder of the work in its tab', () => {
+test('panes of other plugins are left out; a shell in a plugin repo stays', () => {
   const folders = buildFolders({
     panes: [
       pane('a1', '/r/orch-skill', { tab_id: 'tx' }),
@@ -162,7 +162,7 @@ test('a plugin pane joins the folder of the work in its tab', () => {
     pluginRoots: ['/plugins/herdr-mods'],
   });
   const orch = folders.find((f) => f.path === '/r/orch-skill');
-  assert.deepEqual(orch.panes.map((p) => [p.paneId, p.kind]), [['a1', 'agent'], ['m1', 'plugin']]);
+  assert.deepEqual(orch.panes.map((p) => [p.paneId, p.kind]), [['a1', 'agent']]);
   // a plain shell inside the plugin's repo (someone developing it) stays in that folder
   assert.deepEqual(folders.find((f) => f.path === '/plugins/herdr-mods').panes.map((p) => p.paneId), ['s1']);
 });
