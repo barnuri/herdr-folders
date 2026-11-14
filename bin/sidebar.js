@@ -895,7 +895,17 @@ class Sidebar {
     else if (folder.terminalCount) right.push([`${TERMINAL_ICON} ${folder.terminalCount}`, THEME.faint]);
     const rightText = right.map(([text]) => text).join(' ');
     const plusWidth = 4;
-    head.add(truncate(folder.name, cols - head.cols - width(rightText) - plusWidth - 3), s(holdsFocus ? THEME.accent : THEME.text, ANSI.bold));
+    const rightEdge = cols - width(rightText) - plusWidth - 3;
+    head.add(truncate(folder.name, rightEdge - head.cols), s(holdsFocus ? THEME.accent : THEME.text, ANSI.bold));
+    // The git status follows the name on the same row, as far as there is room.
+    if (folder.isRepo && folder.git) {
+      for (const segment of promptSegments(folder.git)) {
+        const room = rightEdge - head.cols - 1;
+        if (room < 2) break;
+        head.add(' ');
+        head.add(truncate(segment.text, room), s(segment.key === 'branch' ? THEME.faint : segment.color));
+      }
+    }
     head.pad(cols - width(rightText) - plusWidth - 2);
     for (const [text, color] of right) head.add(text, s(color));
     head.add(' ');
@@ -903,17 +913,7 @@ class Sidebar {
     addSelectable(head, { run: toggle, toggle, folder, context });
     const sub = attachTo(head);
 
-    if (folder.isRepo && folder.git) {
-      const gitLine = begin();
-      gitLine.add('   ');
-      gitLine.add(`${BRANCH_ICON} `, s(THEME.faint));
-      promptSegments(folder.git).forEach((segment, i) => {
-        if (i) gitLine.add(' ');
-        const room = cols - gitLine.cols - 2;
-        if (room > 1) gitLine.add(truncate(segment.text, room), s(segment.color));
-      });
-      sub(gitLine);
-    } else if (!folder.isRepo && this.state.grouping !== 'tree') {
+    if (!folder.isRepo && this.state.grouping !== 'tree') {
       const pathLine = begin();
       pathLine.add('   ');
       pathLine.add(truncateLeft(folder.path.replace(os.homedir(), '~'), cols - pathLine.cols - 2), s(THEME.faint));
