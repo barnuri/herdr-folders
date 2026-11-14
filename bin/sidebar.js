@@ -753,6 +753,7 @@ class Sidebar {
   }
 
   bodyLines() {
+    this.cardIndex = 0;
     if (this.menu === 'actions') return this.actionLines();
     if (this.menu) return this.menuLines();
     if (this.view === 'projects') return this.projectLines();
@@ -793,6 +794,16 @@ class Sidebar {
   }
 
   folderLines(folder, depth, lines, addSelectable) {
+    const first = lines.length;
+    this.folderBody(folder, depth, lines, addSelectable);
+    // Tint the whole group, head and panes, so each folder reads as one card.
+    const even = this.cardIndex++ % 2 === 0;
+    lines.slice(first).forEach((line, i) => {
+      line.tint = i === 0 ? (even ? THEME.cardAHead : THEME.cardBHead) : even ? THEME.cardA : THEME.cardB;
+    });
+  }
+
+  folderBody(folder, depth, lines, addSelectable) {
     const cols = this.cols;
     const pad = '  '.repeat(depth);
     const collapsed = this.isCollapsed(folder.path);
@@ -885,24 +896,27 @@ class Sidebar {
         row.add(' ');
         const label = pane.name ? `${pane.name} · ${pane.agent}` : pane.agent;
         const right = style.label;
-        const room = cols - row.cols - width(right) - 4;
+        const room = cols - row.cols - width(right) - 3;
         row.add(truncate(label, room), labelStyle(THEME.text));
         const title = displayTitle(pane);
         if (!tall && title && room - width(label) > 4) row.add(` ${truncate(title, room - width(label) - 1)}`, s(THEME.faint));
-        row.pad(cols - width(right) - 3);
+        row.pad(cols - width(right) - 2);
         row.add(right, s(style.color));
-        row.add(' ');
-        row.add(this.agentExpanded(pane.paneId) ? '\uf106' : '\uf107', s(THEME.faint), { run: toggle });
         subtitle = title || (pane.tabLabel ? `tab ${pane.tabLabel}` : pane.paneId);
       } else {
+        // A shell reads like an agent row: icon, its name, and a state word on the right.
         const style = STATUS_STYLE[pane.status];
         row.add(style.glyph, s(style.color));
         row.add(' ');
-        row.add(TERMINAL_ICON, s(THEME.muted));
+        row.add(TERMINAL_ICON, s(pane.busy ? THEME.cyan : THEME.green));
         row.add(' ');
+        const right = pane.busy ? 'running' : 'ready';
+        const name = pane.busy ? pane.command : pane.shell || 'shell';
+        row.add(truncate(name, cols - row.cols - width(right) - 3), labelStyle(pane.busy ? THEME.text : THEME.muted));
+        row.pad(cols - width(right) - 2);
+        row.add(right, s(pane.busy ? THEME.cyan : THEME.faint));
         const subdir = pane.cwd !== folder.path ? pane.cwd.replace(`${folder.path}/`, '') : '';
-        row.add(truncate(pane.command || 'shell', cols - row.cols - 1), labelStyle(pane.busy ? THEME.text : THEME.muted));
-        subtitle = [subdir && `./${subdir}`, pane.tabLabel && `tab ${pane.tabLabel}`].filter(Boolean).join(' · ') || pane.paneId;
+        subtitle = [subdir && `./${subdir}`, pane.tabLabel && `tab ${pane.tabLabel}`, pane.busy && pane.shell && `in ${pane.shell}`].filter(Boolean).join(' · ') || pane.paneId;
       }
       const item = { run: focusRun, toggle, folder, pane, context };
       addSelectable(row, item);

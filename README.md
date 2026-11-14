@@ -22,6 +22,10 @@ on a free local model. Re-record it with the [`herdr-folders-demo` skill](skills
 - **Two groupings:** flat, one group per folder (default), or a tree that nests folders by path,
   with single-child directories merged (`sandbox/private`). Toggle with the toolbar button, `v`, or
   `grouping tree|folder`.
+- **Folder cards:** each folder group (its head, git line, agents and shells) sits on its own card
+  colour, alternating blue-grey and plum, so you can see where a folder starts and ends.
+- **Shells read like agents:** shell name (`zsh`, `bash`) or the running command, with `ready` or
+  `running` on the right.
 - **Easy targets:** every agent and shell is a two-row card (name, then its title or tab), and a
   click anywhere on the card works. The card under the pointer is highlighted. `s` or
   `spacing compact` goes back to one-row items.
