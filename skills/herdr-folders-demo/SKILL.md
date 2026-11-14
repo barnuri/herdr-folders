@@ -13,7 +13,7 @@ allowed-tools: Bash, Read
 
 Records `demo/demo.gif`, about 50 seconds. The panel replaces herdr's sidebar, then the GIF shows
 collapse and expand, agent details, resize, the bulk close menu (cancelled), the git popup (stage,
-commit, push), hide and show, restoring herdr's sidebar, and opening a project from the Projects tab.
+commit, push), hide and show, restoring herdr's sidebar, opening a project from the Projects tab, the actions list, and tree grouping.
 
 ## Rules
 
@@ -39,13 +39,14 @@ and a Nerd Font named `JetBrainsMono Nerd Font Mono`. For the Projects tab, chec
 3. Run `vhs demo/folders.tape` from the repo root, with a 6-minute timeout. Before recording
    (hidden), it runs `demo/stage.sh` and waits 70 s for the agents to start working. Then it runs
    `demo/run.sh`, which attaches a client and starts `demo/driver.sh` (the timeline).
-4. Check the driver timeline: `cat "$(cat /tmp/hfd.root)/driver.log"` must end with `t=61 done`.
+4. Check the driver timeline: `cat "$(cat /tmp/hfd.root)/driver.log"` must reach `t=67 flat grouping` (vhs may stop it before `t=69 done`).
 5. Look at the GIF before you keep it. Extract frames and read three of them:
    `ffmpeg -v error -y -i demo/demo.gif -vf "fps=1/3,scale=1100:-1" "$TMPDIR/g%02d.png"`
    - The panel is on the left, with no herdr sidebar beside it.
    - At least one agent row shows `working`.
    - The git popup shows a staged `src/price.js` with a red and a green diff line.
    - The Projects tab lists `mobile-app` with a green dot after it opens.
+   - The actions list shows the VIEW, PANEL, GIT and CLOSE sections.
 6. Run `bash demo/cleanup.sh`. It stops the demo server and moves `/tmp/hfd.*` to the trash.
 7. Keep the GIF under about 3 MB. The README embeds it.
 

@@ -35,5 +35,5 @@ Sleep 3s
 Type "P"
 Sleep 3s
 Type "q"
-# t≈38..61: hide, show, restore herdr's sidebar, replace it again, open a project from the Projects tab
-Sleep 24s
+# t≈38..69: hide, show, restore herdr's sidebar, replace it again, open a project, all actions, tree grouping
+Sleep 32s

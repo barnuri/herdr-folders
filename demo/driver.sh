@@ -37,4 +37,8 @@ at 50 projects tab;         cli view projects
 at 52 filter;               key mob
 at 54 open project;         key $'\r'
 at 58 folders tab;          cli view folders
-at 61 done
+at 60 all actions;          key '?'
+at 63 close actions;        key $'\e'
+at 64 tree grouping;        key v
+at 67 flat grouping;        key v
+at 69 done
