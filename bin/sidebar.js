@@ -7,7 +7,7 @@ const path = require('node:path');
 
 const herdrApi = require('../lib/herdr');
 const { collect } = require('../lib/snapshot');
-const { planClose, displayTitle, buildTree, dirKeys } = require('../lib/model');
+const { planClose, displayTitle, buildTree, dirKeys, sortFolders, SORTS } = require('../lib/model');
 const { loadState, updateState, statePath, stateDir } = require('../lib/state');
 const { folderType, PLAIN_FOLDER, OPEN_FOLDER_ICON, AGENT_ICON, TERMINAL_ICON, BRANCH_ICON } = require('../lib/icons');
 const { promptSegments } = require('../lib/prompt');
@@ -351,6 +351,13 @@ class Sidebar {
     this.render();
   }
 
+  cycleSort() {
+    this.save((state) => {
+      state.sort = SORTS[(SORTS.indexOf(state.sort || 'opened') + 1) % SORTS.length];
+    });
+    this.flash(`sort: ${this.state.sort}`, THEME.accent);
+  }
+
   toggleGrouping() {
     this.save((state) => {
       state.grouping = state.grouping === 'tree' ? 'folder' : 'tree';
@@ -441,6 +448,7 @@ class Sidebar {
           : []),
         ['\uf0dc', this.collapsible() ? 'Always expanded (no collapsing)' : 'Allow collapsing folders', '', then(() => this.toggleCollapsible())],
         [AGENT_ICON, this.state.allAgentsExpanded ? 'Collapse agent details' : 'Expand agent details', 'a', then(() => this.toggleAllAgents())],
+        ['\uf160', `Sort: ${this.state.sort || 'opened'} (next: ${SORTS[(SORTS.indexOf(this.state.sort || 'opened') + 1) % SORTS.length]})`, 'o', then(() => this.cycleSort())],
         ['\uf0e8', tree ? 'Group flat, one per folder' : 'Group as a tree by path', 'v', then(() => this.toggleGrouping())],
         ...(this.pm ? [['\uf503', this.view === 'projects' ? 'Show Folders tab' : 'Show Projects tab', 'tab', then(() => this.setView(this.view === 'projects' ? 'folders' : 'projects'))]] : []),
         ['\uf07e', this.state.spacing === 'compact' ? 'Taller rows (easier to click)' : 'Compact rows', 's', then(() => this.toggleSpacing())],
@@ -694,6 +702,9 @@ class Sidebar {
       case 'v':
         this.toggleGrouping();
         break;
+      case 'o':
+        this.cycleSort();
+        break;
       case 's':
         this.toggleSpacing();
         break;
@@ -841,7 +852,7 @@ class Sidebar {
       };
       for (const node of buildTree(this.folders)) walk(node, 0);
     } else {
-      for (const folder of this.folders) this.folderLines(folder, 0, lines, addSelectable);
+      for (const folder of sortFolders(this.folders, this.state.sort)) this.folderLines(folder, 0, lines, addSelectable);
     }
     if (!this.loading && !this.folders.length) {
       const empty = new Line();

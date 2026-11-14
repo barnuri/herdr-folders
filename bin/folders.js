@@ -6,7 +6,7 @@ const path = require('node:path');
 const herdrApi = require('../lib/herdr');
 const gitApi = require('../lib/git');
 const { collect } = require('../lib/snapshot');
-const { planClose, CLOSE_MODES, buildTree, dirKeys } = require('../lib/model');
+const { planClose, CLOSE_MODES, buildTree, dirKeys, SORTS } = require('../lib/model');
 const { updateState, loadState, queuePanelCommand } = require('../lib/state');
 const { promptText } = require('../lib/prompt');
 const projectsApi = require('../lib/projects');
@@ -33,6 +33,7 @@ const USAGE = `herdr-folders — control the folders panel (all output is JSON)
   projects-tab on|off           show or hide the Projects tab in the panel
   view folders|projects         switch the panel's tab
   grouping folder|tree          one flat group per folder (default), or folders nested by path
+  sort opened|status|name       folder order: as opened in herdr (default), busy first, or A to Z
   collapsible on|off            allow collapsing folders, or keep every folder expanded
   spacing comfortable|compact   two-line rows for panes (default), or one-line rows
   git <folder>                  open the git changes panel for a folder
@@ -212,6 +213,12 @@ async function main(argv) {
         ? ['tab', 'create', '--workspace', workspaceId, '--cwd', folderPath, '--label', name, '--focus']
         : ['workspace', 'create', '--cwd', folderPath, '--label', name, '--focus']);
     }
+    case 'sort':
+      if (!SORTS.includes(rest[0])) throw new Error(`sort needs one of: ${SORTS.join(', ')}`);
+      updateState((state) => {
+        state.sort = rest[0];
+      });
+      return { sort: rest[0] };
     case 'collapsible':
       updateState((state) => {
         state.collapsible = rest[0] !== 'off';

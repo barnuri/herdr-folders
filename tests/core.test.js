@@ -35,8 +35,17 @@ test('groups panes by repo root and shows an agent pane only once', () => {
   assert.equal(folders.flatMap((folder) => folder.panes).filter((p) => p.paneId === 'p1').length, 1);
 });
 
-test('folders with a working agent sort first', () => {
-  assert.equal(fixture()[0].path, '/r/a');
+test('folders keep their opened order by default; status and name sorts are optional', () => {
+  const { sortFolders } = require('../lib/model');
+  assert.deepEqual(fixture().map((f) => f.path), ['/r/a', '/r/b', '/r/c', '/r/d']);
+  const reversed = buildFolders({
+    panes: [pane('p1', '/r/z'), pane('p2', '/r/m')],
+    agents: [{ pane_id: 'p2', agent: 'claude', agent_status: 'working' }],
+    processInfo: { p1: idleShell },
+  });
+  assert.deepEqual(sortFolders(reversed).map((f) => f.name), ['z', 'm']);
+  assert.deepEqual(sortFolders(reversed, 'status').map((f) => f.name), ['m', 'z']);
+  assert.deepEqual(sortFolders(reversed, 'name').map((f) => f.name), ['m', 'z']);
 });
 
 test('excluded panes are dropped', () => {
