@@ -130,6 +130,18 @@ test('parseDiff numbers lines and hides file headers', () => {
   assert.deepEqual([rows[1].oldNo, rows[1].newNo, rows[2].oldNo, rows[3].newNo, rows[4].newNo], [3, 3, 4, 4, 5]);
 });
 
+test('splitDiff pairs deletions beside the additions that follow them', () => {
+  const { splitDiff } = require('../bin/git-panel');
+  const pairs = splitDiff(parseDiff('@@ -3,3 +3,3 @@\n ctx\n-old\n+new\n+more\n-gone\n'));
+  assert.deepEqual(pairs.map((p) => p.type), ['hunk', 'pair', 'pair', 'pair', 'pair']);
+  assert.deepEqual(pairs.slice(1).map((p) => [p.left?.text ?? null, p.right?.text ?? null]), [
+    ['ctx', 'ctx'],
+    ['old', 'new'],
+    [null, 'more'],
+    ['gone', null],
+  ]);
+});
+
 test('project filter ranks contiguous and early matches first', () => {
   const { filterProjects, fuzzyScore } = require('../lib/projects');
   const projects = [{ name: 'herdr-web-plugin' }, { name: 'herdr-folders' }, { name: 'web-terminal' }];

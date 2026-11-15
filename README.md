@@ -50,7 +50,7 @@ on a free local model. Re-record it with the [`herdr-folders-demo` skill](skills
 - **Toolbar buttons:** collapse all, expand all, expand all agents (tab, title, pane id), narrow, widen, hide to a strip, and bulk close.
 - **Resize:** use the `−`/`+` buttons or `[`/`]`, or drag the `▕` grip on the left edge. The width is saved.
 - **Bulk close (with confirmation):** close empty folders (every pane is an idle shell), close idle agents and empty folders, close all terminals (agents stay), close everything.
-- **Git changes panel:** right-click a folder (or press `g`) to open a popup. It has staged and unstaged groups, a diff with line numbers, stage, unstage and discard per file or per group, commit, fetch, pull (`--ff-only`) and push.
+- **Git changes panel:** right-click a folder (or press `g`) to open a popup. It has staged and unstaged groups, a side-by-side diff with line numbers (`v` or the header button switches to unified), stage, unstage and discard per file or per group, commit, fetch, pull (`--ff-only`) and push.
 
 ## Install
 
@@ -85,7 +85,7 @@ to expand.
 
 ## Git panel keys
 
-`s` stage or unstage · `d` discard (asks first) · `A`/`U` stage or unstage all · `c` type a commit message, `enter` to commit · `f` fetch · `p` pull · `P` push · `tab` move focus to the diff · `pgup`/`pgdn` scroll · `q` close.
+`s` stage or unstage · `d` discard (asks first) · `A`/`U` stage or unstage all · `c` type a commit message, `enter` to commit · `f` fetch · `p` pull · `P` push · `v` split or unified diff · `tab` move focus to the diff · `pgup`/`pgdn` scroll · `q` close.
 
 ## Control from an AI agent
 

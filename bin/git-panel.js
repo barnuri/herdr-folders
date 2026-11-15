@@ -47,6 +47,31 @@ function parseDiff(text) {
   return rows;
 }
 
+// Pair parsed diff rows for a side-by-side view: a run of deletions sits beside the additions that follow it.
+function splitDiff(rows) {
+  const pairs = [];
+  let index = 0;
+  while (index < rows.length) {
+    const row = rows[index];
+    if (row.type === 'hunk' || row.type === 'meta') {
+      pairs.push({ type: row.type, text: row.text });
+      index += 1;
+    } else if (row.type === 'ctx') {
+      pairs.push({ type: 'pair', left: row, right: row });
+      index += 1;
+    } else {
+      const dels = [];
+      const adds = [];
+      while (rows[index]?.type === 'del') dels.push(rows[index++]);
+      while (rows[index]?.type === 'add') adds.push(rows[index++]);
+      for (let at = 0; at < Math.max(dels.length, adds.length); at += 1) {
+        pairs.push({ type: 'pair', left: dels[at] || null, right: adds[at] || null });
+      }
+    }
+  }
+  return pairs;
+}
+
 class GitPanel {
   constructor(repo) {
     this.repo = repo;
@@ -57,6 +82,8 @@ class GitPanel {
     this.selected = 0;
     this.listScroll = 0;
     this.diffRows = [];
+    this.diffPairs = [];
+    this.diffView = 'split'; // split | unified
     this.diffScroll = 0;
     this.diffKey = null;
     this.focus = 'list'; // list | diff | commit
@@ -78,6 +105,17 @@ class GitPanel {
 
   get listWidth() {
     return Math.max(28, Math.min(56, Math.floor(this.cols * 0.36)));
+  }
+
+  // The diff rows the current view draws: paired rows in split view, plain rows in unified view.
+  get viewRows() {
+    return this.diffView === 'split' ? this.diffPairs : this.diffRows;
+  }
+
+  toggleDiffView() {
+    this.diffView = this.diffView === 'split' ? 'unified' : 'split';
+    this.diffScroll = Math.min(this.diffScroll, Math.max(0, this.viewRows.length - 1));
+    this.render();
   }
 
   start() {
@@ -161,6 +199,7 @@ class GitPanel {
     const entry = this.entries[this.selected];
     if (!entry || entry.type !== 'file') {
       this.diffRows = [];
+      this.diffPairs = [];
       this.diffKey = null;
       return;
     }
@@ -169,6 +208,7 @@ class GitPanel {
     if (key !== this.diffKey || force) this.diffScroll = 0;
     this.diffKey = key;
     this.diffRows = parseDiff(text);
+    this.diffPairs = splitDiff(this.diffRows);
   }
 
   select(index) {
@@ -250,7 +290,7 @@ class GitPanel {
       if (event.x < this.listWidth) {
         this.listScroll = Math.max(0, Math.min(Math.max(0, this.entries.length - (this.rows - 4)), this.listScroll + delta));
       } else {
-        this.diffScroll = Math.max(0, Math.min(Math.max(0, this.diffRows.length - 1), this.diffScroll + delta));
+        this.diffScroll = Math.max(0, Math.min(Math.max(0, this.viewRows.length - 1), this.diffScroll + delta));
       }
       this.render();
       return;
@@ -352,13 +392,16 @@ class GitPanel {
       case 'r':
         this.refresh();
         break;
+      case 'v':
+        this.toggleDiffView();
+        break;
       default:
         break;
     }
   }
 
   scrollDiff(delta) {
-    this.diffScroll = Math.max(0, Math.min(Math.max(0, this.diffRows.length - 1), this.diffScroll + delta));
+    this.diffScroll = Math.max(0, Math.min(Math.max(0, this.viewRows.length - 1), this.diffScroll + delta));
     this.render();
   }
 
@@ -468,22 +511,30 @@ class GitPanel {
     const header = new Line();
     header.background = THEME.surface;
     if (entry?.type === 'file') {
-      header.add(` ${truncateLeft(entry.file.path, dw - 16)}`, s(THEME.text, ANSI.bold));
+      const toggle = this.diffView === 'split' ? ' \uf0db split ' : ' \uf039 unified ';
+      header.add(` ${truncateLeft(entry.file.path, dw - 16 - width(toggle))}`, s(THEME.text, ANSI.bold));
       header.add(entry.staged ? '  staged' : entry.file.untracked ? '  untracked' : '  working tree', s(THEME.faint));
+      header.pad(dw - width(toggle) - 1);
+      header.add(toggle, `${bg(THEME.hover)}${fg(THEME.text)}`, { run: () => this.toggleDiffView() });
     } else {
       header.add(' select a file to see its diff', s(THEME.faint));
     }
     lines.push(header);
     const numberWidth = Math.max(3, String(this.diffRows.reduce((max, row) => Math.max(max, row.oldNo || 0, row.newNo || 0), 0)).length);
-    for (const row of this.diffRows.slice(this.diffScroll, this.diffScroll + height - 1)) {
+    for (const row of this.viewRows.slice(this.diffScroll, this.diffScroll + height - 1)) {
       const line = new Line();
-      const text = row.text.replace(/\t/g, '    ');
       if (row.type === 'meta') {
-        line.add(` ${truncate(text, dw - 2)}`, s(THEME.faint, ANSI.italic));
+        line.add(` ${truncate(row.text.replace(/\t/g, '    '), dw - 2)}`, s(THEME.faint, ANSI.italic));
       } else if (row.type === 'hunk') {
         line.background = THEME.hover;
-        line.add(` ${truncate(text, dw - 2)}`, s(THEME.cyan));
+        line.add(` ${truncate(row.text.replace(/\t/g, '    '), dw - 2)}`, s(THEME.cyan));
+      } else if (row.type === 'pair') {
+        const leftWidth = Math.floor((dw - 1) / 2);
+        this.addSide(line, row.left, 'del', row.left?.oldNo, numberWidth, leftWidth);
+        line.add('\u2502', s(THEME.border));
+        this.addSide(line, row.right, 'add', row.right?.newNo, numberWidth, dw - leftWidth - 1);
       } else {
+        const text = row.text.replace(/\t/g, '    ');
         const oldNo = row.oldNo ? String(row.oldNo).padStart(numberWidth) : ' '.repeat(numberWidth);
         const newNo = row.newNo ? String(row.newNo).padStart(numberWidth) : ' '.repeat(numberWidth);
         const sign = row.type === 'add' ? '+' : row.type === 'del' ? '-' : ' ';
@@ -502,6 +553,23 @@ class GitPanel {
     return lines;
   }
 
+  // One half of a split diff row, exactly `sideWidth` columns: line number, sign and text. `row` is null for a blank side.
+  addSide(line, row, changeType, number, numberWidth, sideWidth) {
+    if (!row) {
+      line.add(' '.repeat(sideWidth));
+      return;
+    }
+    const isChange = row.type === changeType;
+    const fill = isChange ? bg(DIFF_BG[changeType]) : '';
+    const sign = isChange ? (changeType === 'add' ? '+' : '-') : ' ';
+    const prefix = ` ${String(number).padStart(numberWidth)} `;
+    line.add(prefix, `${fill}${fg(isChange ? THEME.muted : THEME.faint)}`);
+    line.add(`${sign} `, `${fill}${fg(isChange ? (changeType === 'add' ? THEME.green : THEME.red) : THEME.faint)}`);
+    const room = Math.max(0, sideWidth - width(prefix) - 2);
+    const text = truncate(row.text.replace(/\t/g, '    '), room);
+    line.add(text + ' '.repeat(Math.max(0, room - width(text))), `${fill}${fg(isChange ? THEME.text : THEME.muted)}`);
+  }
+
   statusLine() {
     const line = new Line();
     line.background = THEME.surface;
@@ -515,7 +583,7 @@ class GitPanel {
     } else if (this.message) {
       line.add(` ${truncate(this.message.text, this.cols - 2)}`, s(this.message.color));
     } else {
-      line.add(truncate(' s stage/unstage · d discard · A/U all · c commit · p pull · P push · f fetch · tab diff · q close', this.cols - 1), s(THEME.faint));
+      line.add(truncate(' s stage/unstage · d discard · A/U all · c commit · p pull · P push · f fetch · v split/unified · tab diff · q close', this.cols - 1), s(THEME.faint));
     }
     return line;
   }
@@ -575,4 +643,4 @@ if (require.main === module) {
   }
 }
 
-module.exports = { GitPanel, parseDiff };
+module.exports = { GitPanel, parseDiff, splitDiff };
