@@ -25,6 +25,7 @@ const HIDDEN_COLS = 4;
 const MIN_COLS = 24;
 const MAX_COLS = 120;
 const RESIZE_STEP_COLS = 6;
+const TRASH_ICON = '\uf1f8';
 const HEADER_ROWS = 2;
 const FOOTER_ROWS = 1;
 
@@ -362,6 +363,22 @@ class Sidebar {
     this.render();
   }
 
+  toggleConfirmKill() {
+    this.save((state) => {
+      state.confirmKill = !state.confirmKill;
+    });
+    this.render();
+  }
+
+  // Trash icon: kill at once, or ask first when the "confirm before kill" setting is on.
+  trash(label, targets) {
+    if (this.state.confirmKill) this.askCloseTargets(label, targets);
+    else {
+      this.menu = { confirm: label, targets };
+      this.guard(() => this.confirmClose());
+    }
+  }
+
   cycleSort() {
     this.save((state) => {
       state.sort = SORTS[(SORTS.indexOf(state.sort || 'opened') + 1) % SORTS.length];
@@ -464,6 +481,7 @@ class Sidebar {
         ['\uf0e8', tree ? 'Group flat, one per folder' : 'Group as a tree by path', 'v', then(() => this.toggleGrouping())],
         ...(this.pm ? [['\uf503', this.view === 'projects' ? 'Show Folders tab' : 'Show Projects tab', 'tab', then(() => this.setView(this.view === 'projects' ? 'folders' : 'projects'))]] : []),
         ['\uf07e', this.state.spacing === 'compact' ? 'Taller rows (easier to click)' : 'Compact rows', 's', then(() => this.toggleSpacing())],
+        ['\uf1f8', this.state.confirmKill ? 'Trash icon: kill without asking' : 'Trash icon: ask before kill', '', then(() => this.toggleConfirmKill())],
         ['\uf021', 'Refresh now', 'r', then(() => this.refresh())],
       ]],
       ['Panel', [
@@ -918,7 +936,7 @@ class Sidebar {
     if (folder.status) right.push([`${statusGlyph(folder.status, this.frame)} ${folder.agentCount}`, STATUS_STYLE[folder.status].color]);
     else if (folder.terminalCount) right.push([`${TERMINAL_ICON} ${folder.terminalCount}`, THEME.faint]);
     const rightText = right.map(([text]) => text).join(' ');
-    const plusWidth = 4;
+    const plusWidth = folder.panes.length ? 7 : 4;
     const rightEdge = cols - width(rightText) - plusWidth - 3;
     head.add(truncate(folder.name, rightEdge - head.cols), s(holdsFocus ? THEME.accent : THEME.text, ANSI.bold));
     // The git status follows the name on the same row, as far as there is room.
@@ -935,6 +953,9 @@ class Sidebar {
     for (const [text, color] of right) head.add(text, s(color));
     head.add(' ');
     head.add(' + ', `${bg(THEME.hover)}${fg(THEME.green)}${ANSI.bold}`, { run: () => this.newTab(folder) });
+    if (folder.panes.length) {
+      head.add(` ${TRASH_ICON} `, s(THEME.red), { run: () => this.trash(`Close everything in ${folder.name}`, folder.panes) });
+    }
     addSelectable(head, { run: toggle, toggle, folder, context });
     const sub = attachTo(head);
     // Taller click targets: in comfortable spacing every item gets a blank row under it that
@@ -991,12 +1012,15 @@ class Sidebar {
       row.add(' ');
       // Narrow panels (phones) drop the state word and keep the colour-coded glyph.
       const showState = cols >= 34;
-      const stateWidth = showState ? width(state) + 2 : 1;
+      const stateWidth = (showState ? width(state) + 2 : 1) + 3;
       row.add(truncate(name, cols - row.cols - stateWidth), s(marked ? THEME.text : pane.busy || pane.kind === 'agent' ? THEME.text : THEME.muted, marked ? ANSI.bold : ''));
       if (showState) {
-        row.pad(cols - width(state) - 2);
+        row.pad(cols - width(state) - 5);
         row.add(state, s(stateColor));
+      } else {
+        row.pad(cols - 4);
       }
+      row.add(` ${TRASH_ICON} `, s(THEME.red), { run: () => this.trash(`Close ${pane.kind === 'agent' ? 'agent' : 'shell'}`, [pane]) });
       addSelectable(row, { run: focusRun, toggle, folder, pane, context: () => this.openPaneMenu(pane, folder) });
       spacer(row, marked);
     }
