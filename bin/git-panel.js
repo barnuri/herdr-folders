@@ -3,6 +3,7 @@
 
 const path = require('node:path');
 const os = require('node:os');
+const { spawn } = require('node:child_process');
 
 const gitApi = require('../lib/git');
 const { promptSegments } = require('../lib/prompt');
@@ -15,6 +16,32 @@ const FILE_STATUS_COLOR = { M: THEME.yellow, A: THEME.green, D: THEME.red, R: TH
 const DIFF_BG = { add: [32, 52, 42], del: [62, 36, 48] };
 
 const s = (color, extra = '') => `${extra}${fg(color)}`;
+
+// Nest changed files by directory: a node has `dirs` (Map by name) and `files`.
+function buildFileTree(files) {
+  const root = { path: '', dirs: new Map(), files: [] };
+  for (const file of files) {
+    const parts = file.path.split('/');
+    let node = root;
+    for (const part of parts.slice(0, -1)) {
+      if (!node.dirs.has(part)) node.dirs.set(part, { name: part, path: node.path ? `${node.path}/${part}` : part, dirs: new Map(), files: [] });
+      node = node.dirs.get(part);
+    }
+    node.files.push(file);
+  }
+  return root;
+}
+
+function filesUnder(node) {
+  return [...node.files, ...[...node.dirs.values()].flatMap(filesUnder)];
+}
+
+function openInBrowser(url) {
+  const command = process.platform === 'darwin' ? 'open' : 'xdg-open';
+  const child = spawn(command, [url], { stdio: 'ignore', detached: true });
+  child.on('error', (error) => logError('git-panel', error));
+  child.unref();
+}
 
 // Parse a unified diff into display rows with old/new line numbers.
 function parseDiff(text) {
@@ -93,6 +120,8 @@ class GitPanel {
     this.message = null;
     this.hits = [];
     this.collapsedGroups = {};
+    this.treeView = true; // tree | list: changed files nested by directory
+    this.collapsedDirs = {};
   }
 
   get cols() {
@@ -173,7 +202,7 @@ class GitPanel {
   }
 
   buildEntries() {
-    const previous = this.entries[this.selected];
+    const previous = this.entries[this.selected]?.key;
     const groups = [
       { id: 'conflicts', title: 'Merge Changes', files: this.files.filter((file) => file.conflict), staged: false },
       { id: 'staged', title: 'Staged Changes', files: gitApi.stagedFiles(this.files), staged: true },
@@ -182,17 +211,30 @@ class GitPanel {
     this.entries = [];
     for (const group of groups) {
       if (!group.files.length) continue;
-      this.entries.push({ type: 'group', group });
+      this.entries.push({ type: 'group', key: `group:${group.id}`, group });
       if (this.collapsedGroups[group.id]) continue;
-      for (const file of group.files) this.entries.push({ type: 'file', file, staged: group.staged, group });
+      if (this.treeView) this.flattenTree(buildFileTree(group.files), group, 0);
+      else for (const file of group.files) this.entries.push(this.fileEntry(group, file, 0));
     }
-    if (previous) {
-      const same = this.entries.findIndex((entry) => entry.type === previous.type && entry.file?.path === previous.file?.path && entry.staged === previous.staged);
-      if (same >= 0) this.selected = same;
+    const same = this.entries.findIndex((entry) => entry.key === previous);
+    if (same >= 0) this.selected = same;
+    else this.selected = Math.max(0, this.entries.findIndex((entry) => entry.type === 'file'));
+  }
+
+  fileEntry(group, file, depth) {
+    return { type: 'file', key: `file:${group.id}:${file.path}`, file, staged: group.staged, group, depth };
+  }
+
+  // Depth-first rows of one group: directories first, then files, each sorted by name.
+  flattenTree(node, group, depth) {
+    const dirs = [...node.dirs.values()].sort((a, b) => a.name.localeCompare(b.name));
+    for (const dir of dirs) {
+      const key = `dir:${group.id}:${dir.path}`;
+      this.entries.push({ type: 'dir', key, dir, depth, group, files: filesUnder(dir) });
+      if (!this.collapsedDirs[key]) this.flattenTree(dir, group, depth + 1);
     }
-    if (this.entries[this.selected]?.type !== 'file') {
-      this.selected = Math.max(0, this.entries.findIndex((entry) => entry.type === 'file'));
-    }
+    const files = [...node.files].sort((a, b) => path.basename(a.path).localeCompare(path.basename(b.path)));
+    for (const file of files) this.entries.push(this.fileEntry(group, file, depth));
   }
 
   async loadDiff(force = false) {
@@ -242,9 +284,11 @@ class GitPanel {
   }
 
   stageEntry(entry) {
-    if (entry.type === 'group') return this.run('stage', () => (entry.group.staged ? gitApi.unstage(this.repo, entry.group.files.map((f) => f.path)) : gitApi.stage(this.repo, entry.group.files.map((f) => f.path))));
-    if (entry.staged) return this.run('unstage', () => gitApi.unstage(this.repo, [entry.file.path]));
-    return this.run('stage', () => gitApi.stage(this.repo, [entry.file.path]));
+    const staged = entry.type === 'file' ? entry.staged : entry.group.staged;
+    const files = entry.type === 'file' ? [entry.file] : entry.type === 'group' ? entry.group.files : entry.files;
+    const paths = files.map((file) => file.path);
+    if (staged) return this.run('unstage', () => gitApi.unstage(this.repo, paths));
+    return this.run('stage', () => gitApi.stage(this.repo, paths));
   }
 
   askDiscard(entry) {
@@ -360,6 +404,7 @@ class GitPanel {
         break;
       case 'enter':
         if (entry?.type === 'group') this.toggleGroup(entry.group.id);
+        else if (entry?.type === 'dir') this.toggleDir(entry.key);
         else this.focus = 'diff';
         this.render();
         break;
@@ -395,6 +440,9 @@ class GitPanel {
       case 'v':
         this.toggleDiffView();
         break;
+      case 't':
+        this.toggleTreeView();
+        break;
       default:
         break;
     }
@@ -411,6 +459,33 @@ class GitPanel {
     this.render();
   }
 
+  toggleDir(key) {
+    this.collapsedDirs[key] = !this.collapsedDirs[key];
+    this.buildEntries();
+    this.render();
+  }
+
+  toggleTreeView() {
+    this.treeView = !this.treeView;
+    this.buildEntries();
+    this.render();
+  }
+
+  async openBranch() {
+    const branch = this.summary?.branch;
+    if (!branch) {
+      this.flash('detached HEAD: no branch to open', THEME.yellow);
+      return;
+    }
+    const url = await gitApi.branchWebUrl(this.repo, branch);
+    if (!url) {
+      this.flash(`${branch} has no web URL: its remote is not a web host`, THEME.yellow);
+      return;
+    }
+    openInBrowser(url);
+    this.flash(`opened ${url}`, THEME.green);
+  }
+
   // ----- render -------------------------------------------------------------
 
   toolbar() {
@@ -422,7 +497,8 @@ class GitPanel {
     line.add(`${BRANCH_ICON} `, s(THEME.faint));
     promptSegments(this.summary).forEach((segment, i) => {
       if (i) line.add(' ');
-      line.add(segment.text, s(segment.color));
+      const run = segment.key === 'branch' ? () => this.guard(() => this.openBranch()) : null;
+      line.add(segment.text, s(segment.color), run && { run });
     });
     const behind = this.summary?.behind || 0;
     const ahead = this.summary?.ahead || 0;
@@ -479,13 +555,23 @@ class GitPanel {
         const action = entry.group.staged ? ' \uf068 ' : ' \uf067 ';
         line.pad(lw - 4);
         line.add(action, s(entry.group.staged ? THEME.yellow : THEME.green), { run: () => this.stageEntry(entry) });
+      } else if (entry.type === 'dir') {
+        const collapsed = this.collapsedDirs[entry.key];
+        const toggle = () => this.toggleDir(entry.key);
+        line.add(`${' '.repeat(1 + entry.depth * 2)}${collapsed ? '\uf105' : '\uf107'} `, s(THEME.muted), { run: toggle });
+        line.add(entry.dir.name, s(THEME.muted), { run: toggle });
+        line.add(` ${entry.files.length}`, s(THEME.faint));
+        const action = entry.group.staged ? ' \uf068 ' : ' \uf067 ';
+        line.pad(lw - 4);
+        line.add(action, s(entry.group.staged ? THEME.yellow : THEME.green), { run: () => this.stageEntry(entry) });
       } else {
         const file = entry.file;
         const code = entry.staged ? file.index : file.untracked ? 'U' : file.conflict ? '!' : file.worktree;
         const colorKey = file.untracked ? '?' : entry.staged ? file.index : file.worktree;
         const base = path.basename(file.path);
-        const dir = path.dirname(file.path) === '.' ? '' : path.dirname(file.path);
-        line.add('   ');
+        // the tree already shows the directory, so only the list view repeats it
+        const dir = this.treeView || path.dirname(file.path) === '.' ? '' : path.dirname(file.path);
+        line.add(' '.repeat(3 + entry.depth * 2));
         line.add(base, s(file.index === 'D' || file.worktree === 'D' ? THEME.red : THEME.text, file.index === 'D' || file.worktree === 'D' ? ANSI.dim : ''), { run: pick, context: () => this.stageEntry(entry) });
         const actions = entry.staged ? [[' \uf068', () => this.stageEntry(entry), THEME.yellow]] : [[' \uf0e2', () => this.askDiscard(entry), THEME.red], [' \uf067', () => this.stageEntry(entry), THEME.green]];
         const tail = 2 + actions.length * 2 + 1;
@@ -583,7 +669,7 @@ class GitPanel {
     } else if (this.message) {
       line.add(` ${truncate(this.message.text, this.cols - 2)}`, s(this.message.color));
     } else {
-      line.add(truncate(' s stage/unstage · d discard · A/U all · c commit · p pull · P push · f fetch · v split/unified · tab diff · q close', this.cols - 1), s(THEME.faint));
+      line.add(truncate(' s stage/unstage · d discard · A/U all · c commit · p pull · P push · f fetch · v split/unified · t tree/list · tab diff · q close', this.cols - 1), s(THEME.faint));
     }
     return line;
   }
@@ -598,7 +684,9 @@ class GitPanel {
     const toolbar = this.toolbar();
     const commit = this.commitLine(lw);
     const rule = new Line();
-    rule.add('\u2500'.repeat(lw), s(THEME.border));
+    const toggleLabel = this.treeView ? ' \uf0e8 tree ' : ' \uf03a list ';
+    rule.add('\u2500'.repeat(lw - width(toggleLabel)), s(THEME.border));
+    rule.add(toggleLabel, `${bg(THEME.hover)}${fg(THEME.text)}`, { run: () => this.toggleTreeView() });
     const list = this.listLines(bodyRows - 2);
     const diff = this.diffLines(bodyRows, dw);
 
@@ -643,4 +731,4 @@ if (require.main === module) {
   }
 }
 
-module.exports = { GitPanel, parseDiff, splitDiff };
+module.exports = { GitPanel, parseDiff, splitDiff, buildFileTree };

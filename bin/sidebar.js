@@ -927,7 +927,8 @@ class Sidebar {
         const room = rightEdge - head.cols - 1;
         if (room < 2) break;
         head.add(' ');
-        head.add(truncate(segment.text, room), s(segment.key === 'branch' ? THEME.magenta : segment.color));
+        const run = segment.key === 'branch' ? () => this.guard(() => this.openGit(folder)) : null;
+        head.add(truncate(segment.text, room), s(segment.key === 'branch' ? THEME.magenta : segment.color), run && { run });
       }
     }
     head.pad(cols - width(rightText) - plusWidth - 2);

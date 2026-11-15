@@ -178,3 +178,22 @@ test('panes of other plugins are left out; a shell in a plugin repo stays', () =
   // a plain shell inside the plugin's repo (someone developing it) stays in that folder
   assert.deepEqual(folders.find((f) => f.path === '/plugins/herdr-mods').panes.map((p) => p.paneId), ['s1']);
 });
+
+test('webBranchUrl turns a git remote into the branch page on its web host', () => {
+  const { webBranchUrl } = require('../lib/git');
+  assert.equal(webBranchUrl('git@github.com:barnuri/herdr-folders.git', 'feat/tree'), 'https://github.com/barnuri/herdr-folders/tree/feat/tree');
+  assert.equal(webBranchUrl('https://user@github.com/o/r.git', 'main'), 'https://github.com/o/r/tree/main');
+  assert.equal(webBranchUrl('ssh://git@github.com:22/o/r.git', 'main'), 'https://github.com/o/r/tree/main');
+  assert.equal(webBranchUrl('/srv/git/repo.git', 'main'), null);
+  assert.equal(webBranchUrl('', 'main'), null);
+});
+
+test('buildFileTree nests changed files by directory', () => {
+  const { buildFileTree } = require('../bin/git-panel');
+  const tree = buildFileTree([{ path: 'a/b/x.js' }, { path: 'a/y.js' }, { path: 'top.md' }]);
+  assert.deepEqual([...tree.dirs.keys()], ['a']);
+  assert.deepEqual([...tree.dirs.get('a').dirs.keys()], ['b']);
+  assert.deepEqual(tree.dirs.get('a').files.map((f) => f.path), ['a/y.js']);
+  assert.deepEqual(tree.dirs.get('a').dirs.get('b').files.map((f) => f.path), ['a/b/x.js']);
+  assert.deepEqual(tree.files.map((f) => f.path), ['top.md']);
+});
