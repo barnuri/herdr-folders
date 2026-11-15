@@ -344,6 +344,17 @@ class Sidebar {
     this.render();
   }
 
+  cardBackgrounds() {
+    return this.state.cardBackgrounds !== false;
+  }
+
+  toggleCardBackgrounds() {
+    this.save((state) => {
+      state.cardBackgrounds = state.cardBackgrounds === false;
+    });
+    this.render();
+  }
+
   toggleSpacing() {
     this.save((state) => {
       state.spacing = state.spacing === 'compact' ? 'comfortable' : 'compact';
@@ -447,6 +458,7 @@ class Sidebar {
             ]
           : []),
         ['\uf0dc', this.collapsible() ? 'Always expanded (no collapsing)' : 'Allow collapsing folders', '', then(() => this.toggleCollapsible())],
+        ['\uf009', this.cardBackgrounds() ? 'Hide folder card backgrounds' : 'Show folder card backgrounds', '', then(() => this.toggleCardBackgrounds())],
         [AGENT_ICON, this.state.allAgentsExpanded ? 'Collapse agent details' : 'Expand agent details', 'a', then(() => this.toggleAllAgents())],
         ['\uf160', `Sort: ${this.state.sort || 'opened'} (next: ${SORTS[(SORTS.indexOf(this.state.sort || 'opened') + 1) % SORTS.length]})`, 'o', then(() => this.cycleSort())],
         ['\uf0e8', tree ? 'Group flat, one per folder' : 'Group as a tree by path', 'v', then(() => this.toggleGrouping())],
@@ -867,6 +879,7 @@ class Sidebar {
     this.folderBody(folder, depth, lines, addSelectable);
     // Tint the whole group, head and panes, so each folder reads as one card.
     const even = this.cardIndex++ % 2 === 0;
+    if (!this.cardBackgrounds()) return;
     lines.slice(first).forEach((line, i) => {
       line.tint = i === 0 ? (even ? THEME.cardAHead : THEME.cardBHead) : even ? THEME.cardA : THEME.cardB;
     });

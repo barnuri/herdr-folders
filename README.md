@@ -100,6 +100,7 @@ node bin/folders.js view projects|folders
 node bin/folders.js grouping tree|folder
 node bin/folders.js spacing compact|comfortable
 node bin/folders.js collapsible on|off
+node bin/folders.js card-backgrounds on|off
 node bin/folders.js new-tab ~/repo
 node bin/folders.js collapse-all | expand-all | expand-agents | collapse-agents
 node bin/folders.js close terminals                  # dry run: lists what would close

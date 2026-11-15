@@ -35,6 +35,7 @@ const USAGE = `herdr-folders — control the folders panel (all output is JSON)
   grouping folder|tree          one flat group per folder (default), or folders nested by path
   sort opened|status|name       folder order: as opened in herdr (default), busy first, or A to Z
   collapsible on|off            allow collapsing folders, or keep every folder expanded
+  card-backgrounds on|off       tint each folder group with its own background, or leave them plain
   spacing comfortable|compact   two-line rows for panes (default), or one-line rows
   git <folder>                  open the git changes panel for a folder
   confirm-close <mode>          open a popup that asks before closing
@@ -224,6 +225,12 @@ async function main(argv) {
         state.collapsible = rest[0] !== 'off';
       });
       return { collapsible: rest[0] !== 'off' };
+    case 'card-backgrounds':
+      if (!['on', 'off'].includes(rest[0])) throw new Error('card-backgrounds needs on or off');
+      updateState((state) => {
+        state.cardBackgrounds = rest[0] === 'on';
+      });
+      return { cardBackgrounds: rest[0] === 'on' };
     case 'spacing':
       if (!['compact', 'comfortable'].includes(rest[0])) throw new Error('spacing needs compact or comfortable');
       updateState((state) => {
