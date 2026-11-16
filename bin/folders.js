@@ -186,7 +186,9 @@ async function main(argv) {
       if (rest[0] === 'off') return replaceOff();
       return { replace: loadState().replace };
     case 'dock':
-      return ensureDock();
+      // A pane event (new shell, kill, pane focus) stays in its tab, so it skips the slot pass
+      // that switches to other tabs. Tab and workspace events run it.
+      return ensureDock({ slots: rest[0] !== 'pane' });
     case 'projects': {
       const pm = projectsApi.locateProjectManager();
       if (!pm) throw new Error('herdr-project-manager is not installed');

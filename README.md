@@ -45,7 +45,7 @@ on a free local model. Re-record it with the [`herdr-folders-demo` skill](skills
 - **Settings and actions:** the toolbar keeps only hide and the gear. The gear (or `?`) opens a list
   of every panel action with its icon and key: view, panel, folder and bulk close.
 - **Folder tree:** one node per folder, with a type icon (rust, go, python, bun, typescript, node, java, helm, docker, agent, git, plain). Under it are its agents and terminals. A pane that runs an agent is shown once, as an agent.
-- **herdr statuses:** agents show working (spinner), blocked, done, idle and unknown. Terminals show `›` at the shell prompt, or `▶ <command>` while something runs. Folders show the most urgent status. Folders with active agents sort first.
+- **herdr statuses:** agents show working (spinner), orch (spinner, magenta: the agent is idle but orch work it started is still running, with the orch summary under the card), blocked, done, idle and unknown. Terminals show `›` at the shell prompt, or `▶ <command>` while something runs. Folders show the most urgent status. Folders with active agents sort first.
 - **Git line per folder:** `branch ↓behind ↑ahead +added ?untracked ±modified -deleted !conflicts`, or `=` when clean.
 - **Toolbar buttons:** collapse all, expand all, expand all agents (tab, title, pane id), narrow, widen, hide to a strip, and bulk close.
 - **Resize:** use the `−`/`+` buttons or `[`/`]`, or drag the `▕` grip on the left edge. The width is saved.

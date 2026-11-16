@@ -160,7 +160,7 @@ class Sidebar {
     this.spinTimer = setInterval(() => {
       this.frame += 1;
       // Spinner frames are output to a pty; only the panel the user can see draws them.
-      if (this.visible !== false && this.folders.some((folder) => folder.panes.some((pane) => pane.status === 'working'))) this.render();
+      if (this.visible !== false && this.folders.some((folder) => folder.panes.some((pane) => pane.status === 'working' || pane.status === 'orch'))) this.render();
     }, SPIN_MS);
     this.render();
     this.refresh();
@@ -806,7 +806,7 @@ class Sidebar {
   // ----- render -------------------------------------------------------------
 
   counts() {
-    const counts = { working: 0, blocked: 0, done: 0, idle: 0, running: 0 };
+    const counts = { working: 0, orch: 0, blocked: 0, done: 0, idle: 0, running: 0 };
     for (const folder of this.folders) for (const pane of folder.panes) if (counts[pane.status] !== undefined) counts[pane.status] += 1;
     return counts;
   }
@@ -1022,7 +1022,15 @@ class Sidebar {
       }
       row.add(` ${TRASH_ICON} `, s(THEME.red), { run: () => this.trash(`Close ${pane.kind === 'agent' ? 'agent' : 'shell'}`, [pane]) });
       addSelectable(row, { run: focusRun, toggle, folder, pane, context: () => this.openPaneMenu(pane, folder) });
-      spacer(row, marked);
+      if (pane.orchSummary && cols >= 34) {
+        const note = begin();
+        if (marked) note.background = THEME.selected;
+        note.add('     ');
+        note.add(truncate(pane.orchSummary, cols - note.cols - 2), s(THEME.faint));
+        attachTo(row)(note);
+      } else {
+        spacer(row, marked);
+      }
     }
   }
 

@@ -143,4 +143,4 @@ command = ["node", "bin/folders.js", "dock"]
 
 [[events]]
 on = "pane.focused"
-command = ["node", "bin/folders.js", "dock"]
+command = ["node", "bin/folders.js", "dock", "pane"]
