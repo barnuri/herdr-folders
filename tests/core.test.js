@@ -197,3 +197,15 @@ test('buildFileTree nests changed files by directory', () => {
   assert.deepEqual(tree.dirs.get('a').dirs.get('b').files.map((f) => f.path), ['a/b/x.js']);
   assert.deepEqual(tree.files.map((f) => f.path), ['top.md']);
 });
+
+test('difflogic: rows are numbered and side-by-side pairs -/+ runs', () => {
+  const { diffRows, sideBySide, diffLines } = require('../core/difflogic');
+  const rows = diffRows(['@@ -1,2 +1,3 @@', ' a', '-b', '+B', '+c']);
+  assert.deepEqual(rows.slice(1).map((r) => [r.kind, r.old, r.next]), [[' ', 1, 1], ['-', 2, undefined], ['+', undefined, 2], ['+', undefined, 3]]);
+  const pairs = sideBySide(rows);
+  assert.equal(pairs.length, 4);
+  assert.equal(pairs[2].left.text, 'b');
+  assert.equal(pairs[2].right.text, 'B');
+  assert.equal(pairs[3].left, null);
+  assert.deepEqual(diffLines('Binary files a and b differ\n'), ['Binary file · no text diff']);
+});
